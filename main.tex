@@ -110,15 +110,33 @@
 \section{Introduction}
 \label{sec:intro}
 
-\todo{Open with environmental mixtures and their public-health relevance: humans are exposed to many correlated environmental chemicals over the life course; static single-time-point analyses miss long-term joint effects.}
+Longitudinal environmental health studies now routinely measure multiple correlated chemicals at multiple visits, creating demand for methods that can estimate the joint causal effect of time-varying exposure mixtures on health outcomes\citep{stafoggia_review_2017,taylor_prime_2022}.
+Several mixture methods---including weighted quantile sum (WQS) regression\citep{carrico_wqs_2015}, quantile g-computation\citep{keil_qgcomp_2020}, Bayesian WQS\citep{colicino_bwqs_2020}, and Bayesian kernel machine regression (BKMR)\citep{bobb_bkmr_2015,bobb_bkmr_2018}---have become widely adopted, each with well-maintained R software.
+However, these tools are designed for cross-sectional settings and do not address time-varying confounding, the setting in which intermediate covariates (e.g., body mass index) are affected by past exposures and simultaneously confound future exposure--outcome relationships.
 
-\todo{Brief review of existing mixture methods (BKMR, WQS, quantile g-computation, BWQS, etc.) and their limitation to single time points or absence of formal causal interpretation under time-dependent confounding.}
+\citet{chai_gbkmr} addressed this gap by proposing g-BKMR, which embeds BKMR within the g-formula framework\citep{robins_gformula_1986} to yield valid causal estimates under time-varying confounding.
+The key idea is to decompose the causal estimand---the average causal effect (ACE) of shifting the entire exposure trajectory from one level $\bar{a}$ to another $\bar{a}^*$---into a sequence of conditional expectations that can each be estimated with BKMR.
+Specifically, g-BKMR fits separate BKMR models for each time-varying confounder at each visit (mediator models) and for the final outcome (outcome model), all with component-wise variable selection.
+These models are then combined via Monte Carlo g-computation: for each posterior draw, counterfactual confounder values are sequentially sampled forward in time under the intervention, and the outcome is predicted under the resulting full exposure--confounder history.
+This yields a full posterior distribution over the ACE, with credible intervals that propagate uncertainty from all fitted models.
+The approach inherits BKMR's strengths---nonparametric exposure-response surfaces, automatic detection of nonlinearity and interactions, and posterior inclusion probabilities for variable selection---while providing the formal causal interpretation that standalone BKMR lacks in the longitudinal setting.
 
-\todo{Introduce g-BKMR\citep{chai_gbkmr} as a method that combines BKMR with the g-formula to estimate causal effects of time-varying mixtures while flexibly modelling nonlinear, non-additive interactions and handling time-dependent confounders. State the gap: no production-quality software has so far made g-BKMR accessible to applied researchers.}
+Despite its methodological appeal, g-BKMR has remained difficult to use in practice.
+The original implementation required researchers to manually construct time-indexed data matrices, fit and store each BKMR model separately, write custom g-computation loops, and post-process posterior samples---steps that are error-prone, time-consuming, and inaccessible to most applied investigators.
+No production-quality, documented R package has been available to date.
 
-\todo{Statement of contribution: \pkg{causalGBKMR} fills this gap by providing (i) a validated implementation of g-BKMR with variable selection, (ii) a scalable fast-BKMR back-end for cohorts in the thousands, (iii) post-fitting utilities for joint and per-component dose-response analysis, and (iv) a worked application to the Strong Heart Study.}
+We introduce \pkg{causalGBKMR}, an open-source R package that makes g-BKMR accessible to the environmental health research community.
+The package is designed to be \emph{general-purpose}: users can specify an arbitrary number of time points, any number of mixture components and time-varying confounders, and custom intervention contrasts (e.g., user-defined exposure levels for $\bar{a}$ and $\bar{a}^*$, or quantile-based contrasts at any pair of percentiles).
+Variable naming, baseline covariates, and MCMC tuning parameters are all user-configurable, allowing the same interface to serve studies ranging from two-visit designs to complex multi-visit cohorts.
+Specifically, the package provides:
+(i) automated data preparation and variable detection from user-supplied matrices, with support for user-provided covariate names and optional log-transformation;
+(ii) a single-function interface (\fn{gbkmr\_run}) that handles the full g-computation pipeline---fitting sequential BKMR models, Monte Carlo sampling of counterfactual trajectories, and posterior summarisation---while exposing all key parameters (number of MCMC iterations, burn-in selection, Monte Carlo sample size, knot count) for user control;
+(iii) a fast-BKMR engine\citep{sonabend_2024_scalable} that is automatically activated for large samples ($n > 2{,}000$), with user-configurable subset count and parallelisation, extending applicability to cohort sizes representative of MESA, ARIC, and similar studies; and
+(iv) comprehensive documentation including a tutorial vignette, pkgdown website (\url{https://lyric98.github.io/causalGBKMR/}), and continuous-integration testing via GitHub Actions.
+The package is freely available at \url{https://github.com/Lyric98/causalGBKMR}.
 
-\todo{Roadmap: Section~\ref{sec:methods} reviews the estimator and describes the package architecture; Section~\ref{sec:results} presents three use cases (simulation validation, SHS application, scalability benchmark); Section~\ref{sec:discussion} situates the contributions and outlines future work.}
+We evaluate \pkg{causalGBKMR} through three use cases: (1) validation by replication of the simulation study in \citet{chai_gbkmr}; (2) application to the Strong Heart Study (SHS), a prospective cohort of American Indian adults; and (3) a computational benchmark comparing standard and fast-BKMR engines at large sample sizes.
+Section~\ref{sec:methods} briefly reviews the g-BKMR estimator and describes the package architecture; Section~\ref{sec:results} presents the three use cases; Section~\ref{sec:discussion} discusses findings, limitations, and future directions.
 
 % ============================================================================
 % METHODS
@@ -144,6 +162,14 @@
 \label{sec:fast-bkmr}
 
 \todo{Description of the variational/horseshoe approach used by the fast engine for large $n$, with reference to its computational complexity and accuracy trade-offs.}
+
+Standard BKMR requires $O(n^3)$ kernel matrix operations, which becomes prohibitive for large cohorts.
+The fast-BKMR engine \citep{sonabend_2024_scalable} addresses this through a divide-and-conquer strategy implemented in the \pkg{fbkmr} package: the dataset is randomly split into $M$ subsets of approximately equal size, standard BKMR is fit independently on each subset (optionally in parallel), and posterior summaries are combined via median aggregation.
+The recommended per-subset sample size is approximately $1{,}000$ \citep{sonabend_2024_scalable}, with the constraint that $M \le \sqrt{n}$.
+
+\pkg{causalGBKMR} selects the fitting engine automatically based on the analysis sample size: when $n \le 2{,}000$, standard BKMR with Gaussian-process knot approximation ($50$ knots by default) is used; when $n > 2{,}000$ and the \pkg{fbkmr} package is installed, the fast-BKMR engine is activated with $M = \max(5,\, \lfloor n / 1{,}000 \rfloor)$ subsets.
+The threshold of $n = 2{,}000$ was chosen because (i) standard BKMR with knot approximation remains computationally tractable up to this scale (approximately $80$ minutes per model in our benchmark; Section~\ref{sec:usecase-fastbkmr}), (ii) fast-BKMR requires at least $M = 2$ subsets to be meaningful, and each subset should contain approximately $1{,}000$ observations per the author recommendation, yielding a minimum total sample of $2{,}000$, and (iii) the user retains the ability to override this default via the \code{engine} argument.
+When $n > 2{,}000$ but \pkg{fbkmr} is not installed, the package falls back to standard BKMR and issues an informative message suggesting installation.
 
 \subsection{Software architecture}
 \label{sec:architecture}
