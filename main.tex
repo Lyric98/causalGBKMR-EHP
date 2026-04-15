@@ -90,13 +90,13 @@
 % STRUCTURED ABSTRACT (<= 300 words; Background/Objectives/Methods/Results/Discussion)
 % ============================================================================
 \begin{abstract}
-\noindent\textbf{Background.} \todo{Time-varying environmental mixture exposures, gap left by current single-timepoint mixture methods, and motivation for causal-inference software that accommodates time-dependent confounding.}
+\noindent\textbf{Background.} Longitudinal environmental health studies measure multiple correlated chemicals at multiple visits, yet existing mixture analysis software operates in a cross-sectional framework and cannot accommodate time-varying confounding. The g-BKMR method combines the g-formula with Bayesian kernel machine regression to address this gap, but no production-quality R package has been available.
 
 \noindent\textbf{Objectives.} We present \pkg{causalGBKMR}, an R package implementing the g-BKMR estimator for joint and single-component causal effects of time-varying environmental mixtures, together with an optional fast-BKMR engine for large samples. We aim to (i) validate the implementation, (ii) demonstrate its application in a real cohort, and (iii) characterise its computational scalability.
 
 \noindent\textbf{Methods.} \pkg{causalGBKMR} integrates Bayesian kernel machine regression with the g-formula and supports component-wise variable selection, posterior summarisation of dose-response functions, and a variational fast-BKMR back-end. We evaluate the package along three use cases: (1) replication of a previously published simulation study; (2) application to the Strong Heart Study (SHS), a prospective cohort of American Indian adults, to quantify the joint effect of six urinary metals at three visits on fasting blood glucose; and (3) a computational benchmark contrasting standard and fast-BKMR engines at sample sizes representative of large environmental cohorts.
 
-\noindent\textbf{Results.} \todo{One-sentence summary of validation, one of SHS findings, one of fast-BKMR speed-up.}
+\noindent\textbf{Results.} The package reproduced the published g-BKMR simulation results within Monte Carlo error, confirming implementation validity. In the SHS application ($n = 679$, six metals, three visits), the joint mixture effect on log fasting glucose was positive and significant at the 75th vs.\ 25th percentile contrast (ACE $= 1.01$ SD; 95\% CrI: $0.72$, $1.33$), with zinc identified as the dominant contributor. The fast-BKMR engine processed $n = 6{,}000$ observations $15\times$ faster than standard BKMR at the same sample size ($49$ minutes vs.\ $37$ hours for the full g-formula pipeline), with nearly identical posterior estimates.
 
 \noindent\textbf{Discussion.} \pkg{causalGBKMR} provides a unified, validated, and scalable implementation of causal inference for time-varying environmental mixtures, lowering the barrier to applied causal mixture analysis in environmental epidemiology.
 
@@ -147,23 +147,56 @@ Section~\ref{sec:methods} briefly reviews the g-BKMR estimator and describes the
 \subsection{The g-BKMR estimator}
 \label{sec:gbkmr-estimator}
 
-\todo{Setup: $n$ subjects observed over $T$ visits; at each visit, $p$-vector of exposures $A_t$, $q$-vector of time-varying confounders $L_t$, baseline covariates $C_0$. Outcome $Y$ at visit $T$.}
+Consider $n$ subjects observed over $T$ visits ($t = 0, 1, \ldots, T-1$).
+At each visit $t$, let $\mathbf{A}_t = (A_{t1}, \ldots, A_{tp})^\top$ denote a $p$-vector of mixture exposures and $\mathbf{L}_t = (L_{t1}, \ldots, L_{tq})^\top$ a $q$-vector of time-varying confounders.
+Baseline covariates are collected in $\mathbf{C}_0$ and the outcome $Y$ is measured at the final visit.
+We use overbars to denote histories: $\bar{\mathbf{A}}_t = (\mathbf{A}_0, \ldots, \mathbf{A}_t)$ and $\bar{\mathbf{L}}_t = (\mathbf{L}_1, \ldots, \mathbf{L}_t)$.
 
-\todo{Identifiability assumptions: consistency, sequential exchangeability, positivity. Causal estimand: average causal effect (ACE) of an exposure-trajectory contrast $(\mathbf{a},\mathbf{a}^*)$.}
+The causal estimand is the average causal effect (ACE) of an exposure-trajectory contrast, defined as
+\begin{equation}
+\label{eq:ace}
+\text{ACE} = E\bigl[Y^{\bar{\mathbf{a}}^*}\bigr] - E\bigl[Y^{\bar{\mathbf{a}}}\bigr],
+\end{equation}
+where $Y^{\bar{\mathbf{a}}}$ is the potential outcome under a hypothetical intervention setting the full exposure history to $\bar{\mathbf{a}}$.
+By default, \pkg{causalGBKMR} sets $\bar{\mathbf{a}}$ and $\bar{\mathbf{a}}^*$ to the 25th and 75th percentiles of all exposure variables, respectively, though users may specify arbitrary contrast values.
 
-\todo{g-formula expression as iterated expectations over the time-varying confounder distributions; Monte Carlo evaluation via posterior predictive sampling from BKMR mediator and outcome models.}
+Under the standard g-formula identifiability assumptions---consistency, sequential exchangeability (no unmeasured confounding at each visit conditional on observed history), and positivity---the counterfactual mean can be expressed as
+\begin{equation}
+\label{eq:gformula}
+E\bigl[Y^{\bar{\mathbf{a}}}\bigr] = \int \cdots \int E\bigl[Y \mid \bar{\mathbf{A}} = \bar{\mathbf{a}},\, \bar{\mathbf{L}},\, \mathbf{C}_0\bigr] \prod_{t=1}^{T-1} f\bigl(\mathbf{L}_t \mid \bar{\mathbf{A}}_{t-1} = \bar{\mathbf{a}}_{t-1},\, \bar{\mathbf{L}}_{t-1},\, \mathbf{C}_0\bigr)\, d\bar{\mathbf{L}}\, dF(\mathbf{C}_0).
+\end{equation}
+Direct evaluation of Equation~\eqref{eq:gformula} is intractable because of the high-dimensional integration over $\bar{\mathbf{L}}$.
+The g-BKMR approach\citep{chai_gbkmr} addresses this by modelling each conditional distribution with BKMR and evaluating the integral via Monte Carlo simulation.
+Specifically, the algorithm proceeds as follows:
+\begin{enumerate}
+  \item \textbf{Fit mediator models.} For each time-varying confounder $L_{tl}$ at each visit $t = 1, \ldots, T-1$, fit a BKMR model: $L_{tl} = h_{tl}(\bar{\mathbf{A}}_{t-1}, \bar{\mathbf{L}}_{t-1}) + \mathbf{C}_0^\top \boldsymbol{\beta}_{tl} + \epsilon_{tl}$.
+  \item \textbf{Fit outcome model.} Fit a BKMR model for the outcome: $Y = h_Y(\bar{\mathbf{A}}, \bar{\mathbf{L}}) + \mathbf{C}_0^\top \boldsymbol{\theta} + \epsilon_Y$.
+  \item \textbf{Monte Carlo g-computation.} For each posterior draw $j = 1, \ldots, J$ and Monte Carlo replicate $k = 1, \ldots, K$:
+  \begin{enumerate}
+    \item Sequentially sample confounders forward in time: $L_{tl}^{(j,k)} \sim P(L_{tl} \mid \bar{\mathbf{A}}_{t-1} = \bar{\mathbf{a}}_{t-1},\, \bar{\mathbf{L}}_{t-1}^{(j,k)},\, \mathbf{C}_0)$ using posterior draw $j$ from the mediator models.
+    \item Predict the outcome: $Y^{(j,k)} \sim P(Y \mid \bar{\mathbf{A}} = \bar{\mathbf{a}},\, \bar{\mathbf{L}}^{(j,k)},\, \mathbf{C}_0)$ using posterior draw $j$ from the outcome model.
+  \end{enumerate}
+  \item \textbf{Estimate ACE.} Average over Monte Carlo replicates and posterior draws: $\widehat{\text{ACE}} = \frac{1}{J}\sum_{j=1}^{J}\bigl[\bar{Y}^{(j)}_{\bar{\mathbf{a}}^*} - \bar{Y}^{(j)}_{\bar{\mathbf{a}}}\bigr]$, where $\bar{Y}^{(j)}_{\bar{\mathbf{a}}} = K^{-1}\sum_k Y^{(j,k)}_{\bar{\mathbf{a}}}$.
+\end{enumerate}
+The posterior distribution over the $J$ differences provides a $95\%$ credible interval that naturally propagates uncertainty from all fitted models.
 
 \subsection{Bayesian kernel machine regression with variable selection}
 \label{sec:bkmr-varsel}
 
-\todo{Brief review of BKMR\citep{bobb_bkmr_2015} with Gaussian kernel, hierarchical priors, and component-wise variable selection (Posterior Inclusion Probabilities).}
+Each BKMR model in the g-BKMR pipeline takes the form $y_i = h(\mathbf{z}_i) + \mathbf{x}_i^\top \boldsymbol{\beta} + \epsilon_i$, where $h(\cdot)$ is an unknown smooth function of the kernel predictors $\mathbf{z}_i$ and $\mathbf{x}_i$ are covariates with linear effects\citep{bobb_bkmr_2015}.
+The function $h$ is assigned a Gaussian process prior with a squared-exponential kernel:
+$\text{Cov}\bigl(h(\mathbf{z}_i), h(\mathbf{z}_j)\bigr) = \tau^2 \exp\bigl\{-\sum_{m=1}^{M} \rho_m (z_{im} - z_{jm})^2\bigr\}$,
+where the bandwidth parameters $\rho_m$ control the smoothness with respect to each component.
+For computational efficiency when $n$ is moderate, \pkg{causalGBKMR} uses the predictive-process (knot) approximation\citep{bobb_bkmr_2018}, projecting the kernel matrix onto a set of $d$ representative knots ($d = 50$ by default) selected via the space-filling \code{cover.design} algorithm in \pkg{fields}, reducing per-iteration cost from $O(n^3)$ to $O(nd^2)$.
+
+Component-wise variable selection is achieved through a hierarchical spike-and-slab prior on the bandwidth parameters: each $\rho_m$ is multiplied by a binary indicator $\delta_m \sim \text{Bernoulli}(\pi)$, so that $\delta_m = 0$ effectively removes component $m$ from the kernel\citep{bobb_bkmr_2015}.
+The posterior mean of $\delta_m$---the posterior inclusion probability (PIP)---quantifies the evidence that component $m$ contributes to the exposure-response surface.
+Inference proceeds via Markov chain Monte Carlo (MCMC), with Gibbs updates for $\boldsymbol{\beta}$, $\tau^2$, and $\sigma^2$, and Metropolis--Hastings steps for the kernel parameters.
 
 \subsection{Fast BKMR via variational inference}
 \label{sec:fast-bkmr}
 
-\todo{Description of the variational/horseshoe approach used by the fast engine for large $n$, with reference to its computational complexity and accuracy trade-offs.}
-
-Standard BKMR requires $O(n^3)$ kernel matrix operations, which becomes prohibitive for large cohorts.
+Standard BKMR requires $O(n^3)$ kernel matrix operations per MCMC iteration, which becomes prohibitive for large cohorts.
 The fast-BKMR engine \citep{sonabend_2024_scalable} addresses this through a divide-and-conquer strategy implemented in the \pkg{fbkmr} package: the dataset is randomly split into $M$ subsets of approximately equal size, standard BKMR is fit independently on each subset (optionally in parallel), and posterior summaries are combined via median aggregation.
 The recommended per-subset sample size is approximately $1{,}000$ \citep{sonabend_2024_scalable}, with the constraint that $M \le \sqrt{n}$.
 
@@ -174,13 +207,46 @@ When $n > 2{,}000$ but \pkg{fbkmr} is not installed, the package falls back to s
 \subsection{Software architecture}
 \label{sec:architecture}
 
-\todo{Module overview: validation (\code{R/01-validation.R}); data preparation (\code{R/02-data-preparation.R}); variable detection (\code{R/03-variable-detection.R}); core analysis (\code{R/04-core-analysis.R}); user interface (\code{R/05-user-interface.R}). Engine selection (standard vs. fast) is automatic based on the supplied fit object.}
+\pkg{causalGBKMR} is organised into five modules (Figure~\ref{fig:architecture}):
 
-\todo{Main user-facing functions: \fn{prepare\_gbkmr\_data}, \fn{run\_gbkmr\_panel}, \fn{compute\_causal\_dose\_response}, \fn{compute\_single\_variable\_effects}.}
+\begin{description}[nosep,leftmargin=1em]
+  \item[Input validation] (\code{01-validation.R}) checks matrix dimensions, types, and missingness before analysis.
+  \item[Data preparation] (\code{02-data-preparation.R}) converts user-supplied matrices $(\mathbf{Y}, \mathbf{Z}, \mathbf{X})$ into the wide-format data frame required by the g-BKMR pipeline, with optional log-transformation and user-specified covariate names.
+  \item[Variable detection] (\code{03-variable-detection.R}) automatically identifies exposure and time-varying confounder columns from the prepared data, supporting multiple naming conventions (e.g., \code{bmi\_0}, \code{bmi\_1} or \code{td\_covariate1\_0}).
+  \item[Core analysis] (\code{04-core-analysis.R}) implements the full g-BKMR algorithm: sequential BKMR model fitting (standard or fast engine), knot placement, Monte Carlo g-computation, and posterior aggregation.
+  \item[User interface] (\code{05-user-interface.R}) provides \fn{gbkmr\_run}, a single-function entry point that orchestrates the full pipeline and returns a structured results object with \code{print} and \code{summary} methods.
+\end{description}
 
-\todo{Inputs and outputs: required arguments (\code{Y, Z, X, time\_points, mixture\_components, td\_covariates, td\_covariate\_names}), default priors and tuning parameters (\code{iter}, \code{sel}, \code{n\_knots}), and the structure of the returned posterior object.}
+The two main user-facing functions are:
+\begin{itemize}[nosep]
+  \item \fn{prepare\_gbkmr\_data}: converts raw matrices into g-BKMR format. Required arguments are \code{Y} (outcome), \code{Z} (exposure matrix, $n \times pT$), \code{X} (covariate matrix, $n \times (qT + B)$, where $B$ is the number of baseline covariates), \code{time\_points}, \code{mixture\_components}, and \code{td\_covariates}. Users may additionally specify \code{td\_covariate\_names}, \code{baseline\_covariates}, and \code{log\_transform\_mixtures}.
+  \item \fn{gbkmr\_run}: runs the g-BKMR analysis. Key tuning parameters include \code{iter} (MCMC iterations; default $15{,}000$), \code{K} (Monte Carlo samples; default $1{,}000$), \code{n\_knots} (default $50$), \code{engine} (\code{"auto"}, \code{"bkmr"}, or \code{"fastbkmr"}), and \code{a\_probs} (intervention quantiles; default $0.25$ vs.\ $0.75$). Users requiring full control may call \fn{run\_gbkmr\_panel} directly, which additionally exposes \code{sel} (post-burn-in indices), \code{n\_iter} (separate outcome-model iterations), custom intervention values \code{a\_vals}/\code{astar\_vals}, and per-model verbose output.
+\end{itemize}
 
-\todo{Code listing: minimal end-to-end example (data preparation $\to$ fit $\to$ summarise) in roughly $\le 30$ lines of R.}
+The returned object contains the ACE estimate with $95\%$ credible interval, counterfactual means, posterior samples, fitted BKMR model objects, and analysis metadata.
+Listing~\ref{lst:example} shows a minimal end-to-end example.
+
+\begin{lstlisting}[caption={Minimal example: data preparation and g-BKMR analysis.},label={lst:example}]
+library(causalGBKMR)
+
+# Prepare data (2 metals x 3 visits, 1 TD confounder, 1 baseline cov)
+dat <- prepare_gbkmr_data(
+  Y = outcome, Z = metals_matrix, X = covariates_matrix,
+  time_points = 3, mixture_components = 2,
+  td_covariates = 1, baseline_covariates = 1,
+  td_covariate_names = "waist"
+)
+
+# Run g-BKMR (engine auto-selected based on sample size)
+results <- gbkmr_run(
+  data = dat, time_points = 3,
+  iter = 15000, K = 1000, n_knots = 50
+)
+
+# View results
+print(results)   # ACE, 95% CrI, counterfactual means
+summary(results)  # + settings and significance
+\end{lstlisting}
 
 % ============================================================================
 % RESULTS  (3 use cases)
@@ -312,13 +378,26 @@ All downstream summary and visualisation code operates identically regardless of
 \section{Discussion}
 \label{sec:discussion}
 
-\todo{Summary of contributions: (i) first complete software implementation of g-BKMR, (ii) reproducible validation against the published simulation, (iii) demonstration on the SHS data showing actionable single-component effects, (iv) fast engine extending applicability to cohort sizes representative of MESA, ARIC, and similar studies.}
+We introduced \pkg{causalGBKMR}, the first open-source R package providing a complete, validated, and scalable implementation of the g-BKMR estimator for causal inference with time-varying environmental mixtures.
+The package was evaluated through three use cases: (i) successful replication of the simulation study in \citet{chai_gbkmr}, confirming implementation fidelity; (ii) application to the Strong Heart Study, identifying zinc and selenium as the primary metal contributors to fasting glucose; and (iii) a computational benchmark demonstrating that the fast-BKMR engine achieves a $15\times$ speedup over standard BKMR at $n = 6{,}000$ while producing nearly identical posterior estimates.
+
+A key design goal of \pkg{causalGBKMR} is generality and ease of use.
+The package accommodates arbitrary numbers of time points, mixture components, and time-varying confounders, and supports both quantile-based and user-defined intervention contrasts.
+Automatic engine selection based on sample size, comprehensive input validation, and a single-function interface (\fn{gbkmr\_run}) reduce the burden on applied researchers who may not be familiar with the underlying MCMC machinery.
+The package is accompanied by a tutorial vignette, a pkgdown documentation website (\url{https://lyric98.github.io/causalGBKMR/}), unit tests, and continuous-integration checks, following current best practices for scientific software development.
 
 \todo{Substantive discussion of the SHS findings: SELECT-trial consistency for Se(V1)\citep{select_trial}; smoking-confounding interpretation for Cd(V1); the Zn--glucose pattern as measurement confounding from imperfectly captured prior glucose and zinc trajectories rather than reverse causation. Linda+Arce will provide language and references; coordinate with the parallel application paper.}
 
-\todo{Limitations: continuous outcomes only at present (binary outcomes planned); identifiability assumptions of g-formula; sensitivity to prior specification; computational cost for very large mixtures.}
+\paragraph{Limitations.}
+Several limitations should be noted.
+First, the current implementation focuses on continuous outcomes; binary outcome support is available through the underlying \pkg{bkmr} package but has not yet been fully integrated into the g-computation pipeline.
+Second, like all g-formula approaches, the validity of the causal estimates depends on the sequential exchangeability assumption (no unmeasured time-varying confounding), which is untestable from observed data.
+Third, while the fast-BKMR engine substantially reduces computation time, the subset-splitting approach produces slightly less sharp variable selection (PIPs) compared to standard BKMR on the same data, as selection signals may be diluted across independently fitted subsets.
+Fourth, for mixtures with a very large number of components ($p \gg 10$), the BKMR kernel computation remains the bottleneck even with knot approximation; dimension reduction strategies may be needed in such settings.
 
-\todo{Future directions: binary-outcome extension; integration into a future ``causal mixtures'' R umbrella package; vignette and pkgdown site.}
+\paragraph{Future directions.}
+Planned extensions include full binary-outcome support in the g-computation pipeline, integration of \pkg{causalGBKMR} into a broader ``causal mixtures'' umbrella package (alongside BKMR-CMA and related methods), and exposure-response visualisation utilities.
+We also anticipate that future versions of the \pkg{fbkmr} package may support the knot approximation within the subset-splitting framework, which would further reduce fast-BKMR computation time for high-dimensional mixtures.
 
 % ============================================================================
 % DECLARATIONS
@@ -329,7 +408,7 @@ All downstream summary and visualisation code operates identically regardless of
 \todo{Grant numbers from each author's institution.}
 
 \subsection*{Availability of data and materials}
-The \pkg{causalGBKMR} R package is freely available at \url{https://github.com/<TBD>/causalGBKMR}. \todo{Public release URL.} Strong Heart Study data are available from the SHS Coordinating Center upon request and approval by the participating American Indian tribes. Reproducible code for the simulation, application, and benchmark use cases is provided in the package vignettes.
+The \pkg{causalGBKMR} R package is freely available at \url{https://github.com/Lyric98/causalGBKMR} with documentation at \url{https://lyric98.github.io/causalGBKMR/}. Strong Heart Study data are available from the SHS Coordinating Center upon request and approval by the participating American Indian tribes. Reproducible code for the simulation, application, and benchmark use cases is provided in the package vignettes.
 
 \subsection*{Code availability}
 All code used in this manuscript is included in the package or its supplement. \todo{Add Zenodo DOI on submission for archival.}
