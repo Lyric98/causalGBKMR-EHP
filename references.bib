@@ -1,6 +1,6 @@
 % ============================================================================
-% References for causalGBKMR EHP software paper
-% Add entries as the manuscript develops.
+% References for CausalBKMR software paper
+% Add more entries as the manuscript develops.
 % ============================================================================
 
 @article{bobb_bkmr_2018,
@@ -29,7 +29,7 @@
   title   = {{g-BKMR}: A {B}ayesian kernel machine regression approach for the causal analysis of time-varying environmental mixtures},
   journal = {\todo{journal}},
   year    = {2025},
-  note    = {Update with final venue / DOI on submission}
+  note    = {In press / preprint, please update}
 }
 
 @article{select_trial,
@@ -41,10 +41,10 @@
   number  = {1},
   pages   = {39--51},
   doi     = {10.1001/jama.2008.864},
-  note    = {SELECT also reported elevated diabetes risk in the selenium arm; cite the diabetes-specific follow-up paper.}
+  note    = {SELECT also reported elevated diabetes risk in selenium arm; cite the appropriate follow-up paper.}
 }
 
-@article{shs_lee_1990,
+@article{strong_heart_study,
   author  = {Lee, Elisa T. and Welty, Thomas K. and Fabsitz, Richard and Cowan, Linda D. and Le, Nguyen-An and Oopik, Anthony J. and Cucchiara, Andrew J. and Savage, Peter J. and Howard, Barbara V.},
   title   = {The {S}trong {H}eart {S}tudy: a study of cardiovascular disease in {A}merican {I}ndians},
   journal = {American Journal of Epidemiology},
@@ -54,76 +54,48 @@
   pages   = {1141--1155}
 }
 
-@article{robins_gformula_1986,
-  author  = {Robins, James},
-  title   = {A new approach to causal inference in mortality studies with a sustained exposure period---application to control of the healthy worker survivor effect},
-  journal = {Mathematical Modelling},
-  year    = {1986},
-  volume  = {7},
-  number  = {9--12},
-  pages   = {1393--1512},
-  doi     = {10.1016/0270-0255(86)90088-6}
+@manual{qgcomp_package,
+  title  = {\pkg{qgcomp}: Quantile G-Computation},
+  author = {Keil, Alexander P.},
+  year   = {2026},
+  note   = {R package, CRAN},
+  url    = {https://cran.r-project.org/package=qgcomp}
 }
 
-@article{carrico_wqs_2015,
-  author  = {Carrico, Caroline and Gennings, Chris and Wheeler, David C. and Factor-Litvak, Pam},
-  title   = {Characterization of weighted quantile sum regression for highly correlated data in a risk analysis setting},
-  journal = {Journal of Agricultural, Biological, and Environmental Statistics},
-  year    = {2015},
-  volume  = {20},
-  number  = {1},
-  pages   = {100--120},
-  doi     = {10.1007/s13253-014-0180-3}
+@manual{gwqs_package,
+  title  = {\pkg{gWQS}: Generalized Weighted Quantile Sum Regression},
+  author = {Renzetti, Stefano and Curtin, Paul and others},
+  year   = {2026},
+  note   = {R package, CRAN},
+  url    = {https://cran.r-project.org/package=gWQS}
 }
 
-@article{keil_qgcomp_2020,
-  author  = {Keil, Alexander P. and Buckley, Jessie P. and O'Brien, Katie M. and Ferguson, Kelly K. and Zhao, Shanshan and White, Alexandra J.},
-  title   = {A quantile-based g-computation approach to addressing the effects of exposure mixtures},
-  journal = {Environmental Health Perspectives},
+@article{mcgrath_gformula_2020,
+  author  = {McGrath, Sean and Lin, Vincent and Zhang, Zhichao and Petito, Lucia C. and Logan, Roger W. and Hern{\'a}n, Miguel A. and Young, Jessica G.},
+  title   = {\pkg{gfoRmula}: An {R} Package for Estimating the Effects of Sustained Treatment Strategies via the Parametric g-formula},
+  journal = {Patterns},
   year    = {2020},
-  volume  = {128},
-  number  = {4},
-  pages   = {047004},
-  doi     = {10.1289/EHP5838}
-}
-
-@article{colicino_bwqs_2020,
-  author  = {Colicino, Elena and Perera, Frederica and Nasca, Philip and Braun, Joe M. and Tanner, Eva M. and Gennings, Chris and Wright, Robert O.},
-  title   = {Per- and poly-fluoroalkyl substances and bone mineral density: Results from the {B}ayesian weighted quantile sum regression},
-  journal = {Environmental Epidemiology},
-  year    = {2020},
-  volume  = {4},
+  volume  = {1},
   number  = {3},
-  pages   = {e092},
-  doi     = {10.1097/EE9.0000000000000092}
+  pages   = {100008},
+  doi     = {10.1016/j.patter.2020.100008}
 }
 
-@article{sonabend_2024_scalable,
-  author  = {Sonabend, Aaron and Zhang, Jingyu and Schwartz, Joel and Coull, Brent A. and Lu, Junwei},
-  title   = {Scalable {G}aussian process regression via median posterior inference for estimating multi-pollutant mixture health effects},
-  journal = {arXiv preprint},
-  year    = {2024},
-  note    = {arXiv:2411.10858}
+@manual{gformula_package,
+  title  = {\pkg{gfoRmula}: Parametric G-Formula},
+  author = {McGrath, Sean and Lin, Vincent and Zhang, Zhichao and Petito, Lucia C. and Logan, Roger W. and Hern{\'a}n, Miguel A. and Young, Jessica G.},
+  year   = {2026},
+  note   = {R package, CRAN},
+  url    = {https://cran.r-project.org/package=gfoRmula}
 }
 
-@article{stafoggia_review_2017,
-  author  = {Stafoggia, Massimo and Breitner, Susanne and Hampel, Regina and Basaga{\~n}a, Xavier},
-  title   = {Statistical approaches to address multi-pollutant mixtures and multiple exposures: the state of the science},
-  journal = {Current Environmental Health Reports},
-  year    = {2017},
-  volume  = {4},
-  number  = {4},
-  pages   = {481--490},
-  doi     = {10.1007/s40572-017-0162-z}
+@manual{causalmixtures_package,
+  title  = {\pkg{causalmixtures}: A Suite of Functions for Causal Bayesian Kernel Machine Regression},
+  author = {Domingo-Relloso, Arce and Chai, Zilan and Devick, Katrina and Valeri, Linda},
+  year   = {2026},
+  note   = {R package website},
+  url    = {https://arcedr.github.io/causalmixtures/}
 }
 
-@article{taylor_prime_2022,
-  author  = {Taylor, Kyla W. and Joubert, Bonnie R. and Braun, Joe M. and Dilworth, Carmen and Gennings, Chris and Hauser, Russ and Herring, Amy H. and Keil, Alexander P. and Khoury, Muin J. and Merced-Nieves, Francheska M. and others},
-  title   = {Powering research through innovative methods for mixtures in epidemiology ({PRIME}) program: novel and expanded statistical methods},
-  journal = {International Journal of Environmental Research and Public Health},
-  year    = {2022},
-  volume  = {19},
-  number  = {3},
-  pages   = {1378},
-  doi     = {10.3390/ijerph19031378}
-}
+% --- Add references for: g-formula (Robins 1986), MICE (van Buuren), ---
+% --- causal inference textbooks, environmental mixture methods reviews ---
