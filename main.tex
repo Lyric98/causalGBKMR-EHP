@@ -1,7 +1,13 @@
 % ============================================================================
-% CausalBKMR Module Paper
-% Target: Environmental Health (Springer/BMC), Software article type
-% Template: Bobb et al. 2018 (https://doi.org/10.1186/s12940-018-0413-y)
+% causalGBKMR -- Software Paper for Environmental Health Perspectives (EHP)
+%
+% First-author dissertation paper introducing the CausalBKMR R commands
+% for time-varying environmental mixtures within the causalmixtures package.
+%
+% EHP Research Article requirements:
+%   - Main text: <= 7,000 words (excluding abstract/refs/tables/captions/supp)
+%   - Structured abstract: <= 300 words
+%   - No official LaTeX template; use clean article class for Overleaf
 % ============================================================================
 \documentclass[11pt]{article}
 
@@ -13,9 +19,15 @@
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
 \usepackage{hyperref}
-\usepackage[round]{natbib}
+\usepackage{authblk}
+\usepackage{lineno}
 \usepackage{xcolor}
+\usepackage{listings}
+\usepackage{setspace}
+\usepackage{xurl}
 \usepackage{tikz}
 \usepackage{verbatim}
 \usetikzlibrary{arrows.meta,positioning}
@@ -27,26 +39,50 @@
   urlcolor=blue!60!black
 }
 
-% Convenience macros
+% Numeric reference style for EHP-like citations
+\usepackage[numbers,super,sort&compress]{natbib}
+\bibliographystyle{unsrtnat}
+
+% R code listing
+\lstdefinestyle{Rstyle}{
+  language=R,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{red!60!black},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!30}
+}
+\lstset{style=Rstyle}
+
 \newcommand{\todo}[1]{{\color{red}\textbf{[TODO: #1]}}}
+\newcommand{\note}[1]{{\color{purple}\textit{[#1]}}}
 \newcommand{\pkg}[1]{\texttt{#1}}
 \newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\fn}[1]{\texttt{#1()}}
 
-\linespread{1.15}
+\linenumbers
+\onehalfspacing
 \emergencystretch=3em
 
 % --- Title and authors ------------------------------------------------------
 \title{CausalBKMR: R Commands for Causal Inference\\ with Time-Varying Environmental Mixtures}
 
-\author{
-Yanran Li$^{1}$, Arce Domingo-Relloso$^{1}$, Zilan Chai$^{1,2}$,\\
-Ana Navas-Acien$^{3}$, Brent A.\ Coull$^{4}$, and Linda Valeri$^{1,5}$\\[0.5em]
-\small $^{1}$Department of Biostatistics, Columbia University Mailman School of Public Health, New York, NY, USA\\
-\small $^{2}$Microsoft, Redmond, WA, USA\\
-\small $^{3}$Department of Environmental Health Sciences, Columbia University Mailman School of Public Health, New York, NY, USA\\
-\small $^{4}$Department of Biostatistics, Harvard T.H.\ Chan School of Public Health, Boston, MA, USA\\
-\small $^{5}$Department of Epidemiology, Harvard T.H.\ Chan School of Public Health, Boston, MA, USA
-}
+\author[1]{Yanran Li}
+\author[1]{Arce Domingo-Relloso}
+\author[1,2]{Zilan Chai}
+\author[3]{Ana Navas-Acien}
+\author[4]{Brent A.\ Coull}
+\author[1,5,*]{Linda Valeri}
+
+\affil[1]{Department of Biostatistics, Columbia University Mailman School of Public Health, New York, NY, USA}
+\affil[2]{Microsoft, Redmond, WA, USA}
+\affil[3]{Department of Environmental Health Sciences, Columbia University Mailman School of Public Health, New York, NY, USA}
+\affil[4]{Department of Biostatistics, Harvard T.H.\ Chan School of Public Health, Boston, MA, USA}
+\affil[5]{Department of Epidemiology, Harvard T.H.\ Chan School of Public Health, Boston, MA, USA}
+\affil[*]{Corresponding author: \href{mailto:lv2424@columbia.edu}{lv2424@columbia.edu}}
 
 \date{\today}
 
@@ -237,7 +273,6 @@ The authors declare that they have no competing interests.
 % ============================================================================
 % REFERENCES
 % ============================================================================
-\bibliographystyle{plainnat}
 \bibliography{references}
 
 % ============================================================================
