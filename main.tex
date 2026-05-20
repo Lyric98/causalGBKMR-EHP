@@ -147,16 +147,17 @@ The two engines do not have identical support for outcome and time-varying-confo
 
 \begin{table}[h]
 \centering
-\caption{Engine support for \code{gbkmr\_run()} as a function of outcome type and time-varying confounder type. The standard \pkg{bkmr} engine supports every combination, using probit BKMR for binary $Y$ and binary $L_t$ and Bernoulli sampling of counterfactual $L_t$ during Monte Carlo g-computation. The \pkg{fbkmr} engine is restricted to fully continuous problems and raises a hard error otherwise; the default \code{engine = "auto"} setting falls back to \pkg{bkmr} when any binary variable is detected.}
+\setlength{\tabcolsep}{6pt}
+\caption{Engine support for \code{gbkmr\_run()} as a function of outcome type and time-varying confounder type. ``Gaussian'' indicates the standard Gaussian-kernel path; ``probit'' indicates that the corresponding BKMR model uses a probit link (and that counterfactual $L_t$ are then drawn by Bernoulli sampling during Monte Carlo g-computation); ``hard error'' indicates the command stops with an explicit message. The default \code{engine = "auto"} setting falls back to \pkg{bkmr} whenever any binary variable is detected.}
 \label{tab:engine_support}
 \begin{tabular}{llll}
 \toprule
 Outcome $Y$ & Confounder $L_t$ & \code{engine = "bkmr"} & \code{engine = "fastbkmr"} \\
 \midrule
-continuous & all continuous & Supported (Gaussian)                              & Supported (Gaussian) \\
-binary     & all continuous & Supported (probit $Y$)                            & Hard error \\
-continuous & any binary     & Supported (probit $L_t$, Bernoulli MC)            & Hard error \\
-binary     & any binary     & Supported (probit $Y$, probit $L_t$, Bernoulli MC) & Hard error \\
+continuous & all continuous & Gaussian              & Gaussian   \\
+binary     & all continuous & Probit $Y$            & Hard error \\
+continuous & any binary     & Probit $L_t$          & Hard error \\
+binary     & any binary     & Probit $Y$ + $L_t$    & Hard error \\
 \bottomrule
 \end{tabular}
 \end{table}
