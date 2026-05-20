@@ -364,39 +364,102 @@ Scenario & Method & Bias & MSE & Coverage \\
 \label{fig:sim_results}
 \end{figure}
 
-\subsection*{Application to Strong Heart Study}
+\subsection*{Application: command walkthrough on the Strong Heart Study}
 
-\subsubsection*{Study population and exposures}
+We illustrate the three-step \pkg{CausalBKMR} workflow on a metal-mixture analysis of fasting blood glucose in the Strong Heart Study \citep[SHS;][]{shs_lee_1990}. The intent of this section is to demonstrate what each command does on a realistic problem; full scientific findings, single-metal contributions, and sensitivity analyses are reported in the accompanying SHS application paper (in preparation).
 
-We applied \pkg{CausalBKMR} to data from the Strong Heart Study \citep[SHS;][]{shs_lee_1990}, a prospective cohort of American Indian adults with low to moderate exposure to metals and a high burden of cardiometabolic disease. The analytic sample consisted of 679 participants with complete urinary metal measurements at three study visits (Visits 1--3) and fasting blood glucose measured at Visit 3. Six urinary metals were considered: selenium (Se), cadmium (Cd), molybdenum (Mo), tungsten (W), arsenic (As), and zinc (Zn), all standardised to urinary creatinine and log-transformed prior to analysis. The mixture comprised 18 exposure variables (six metals $\times$ three visits).
+The analytic sample contains $n = 679$ American Indian adults with urinary measurements of six metals (Se, Cd, Mo, W, As, Zn) at three visits (Visits 1--3), waist circumference and fasting glucose at Visits 1 and 2 as time-varying confounders, and six baseline covariates (age, sex, body mass index, study centre, smoking status, baseline kidney function). The outcome is log fasting glucose at Visit~3 (skewness $1.8$--$2.1$ on the original scale). The assumed causal structure is in Figure~\ref{fig:dag} and the cross-timepoint exposure correlation pattern in Figure~\ref{fig:corr}; the latter motivates a kernel-based approach because within-metal cross-visit correlations of $0.2$--$0.6$ make parametric g-computation unstable.
 
-The outcome was log-transformed fasting blood glucose at Visit~3 (motivated by right-skewed distributions; skewness $1.8$--$2.1$). Time-varying confounders included waist circumference and fasting glucose measured at Visits 1 and 2, modeled as time-dependent covariates affected by prior exposure. Baseline covariates included age, sex, body mass index, study centre, smoking status (current/former/never), and baseline kidney function (CKD-EPI eGFR). Missing values were handled by multiple imputation ($m = 5$, predictive mean matching). The directed acyclic graph encoding the assumed causal structure is shown in Figure~\ref{fig:dag}; the cross-timepoint correlation matrix is shown in Figure~\ref{fig:corr}.
+\subsubsection*{Step 1. Data preparation}
+The first step assembles the user's raw data frame into three pieces that \code{prepare\_gbkmr\_data()} consumes: an outcome vector \code{Y}, a mixture matrix \code{Z} ordered by visit, and a covariate matrix \code{X} that lists every time-varying confounder across all visits before the baseline block.
 
-\subsubsection*{Model specification and estimation}
+\begin{verbatim}
+library(causalmixtures)
 
-We denote the six-metal exposure vector at visit $t$ by $A_t = (A_{t,1}, \ldots, A_{t,6})$ for $t = 0, 1, 2$ (corresponding to Visits 1--3), the time-varying confounders at visit $t$ by $L_t = (\text{waist}_t, \text{glucose}_t)$ for $t = 1, 2$, the baseline covariates by $C_0$, and the outcome by $Y$ (log fasting glucose at Visit~3). Figure~\ref{fig:dag} shows the assumed causal structure: prior exposures $A_{<t}$ affect both current time-varying confounders $L_t$ and future exposures $A_t$, and all paths converge on $Y$. Note that $L_t$ are treated as time-varying confounders (not mediators): our goal is to recover the total causal effect of the exposure trajectory on $Y$ while accounting for the feedback between $A_t$ and $L_t$ over time, not to decompose it into direct and indirect pathways.
+# Outcome vector, mixture matrix (6 metals x 3 visits = 18 columns),
+# and covariate matrix (2 time-varying x 2 visits + 6 baseline = 10 columns).
+Y <- shs$log_glucose_v3
 
-A key motivation for using \pkg{CausalBKMR} rather than a parametric g-formula is the extreme multicollinearity across metal-timepoint exposures (within-metal cross-visit correlations of $0.2$--$0.6$; Figure~\ref{fig:corr}). Fitting the g-formula with standard linear models in this setting yields unstable estimates with inflated standard errors, to the point that parametric g-computation did not produce interpretable results in preliminary analyses. \pkg{CausalBKMR} combines the flexibility of the Gaussian kernel with Bayesian regularisation, enabling valid inference under high correlation.
+Z <- as.matrix(shs[, c(
+  "Se_v1","Cd_v1","Mo_v1","W_v1","As_v1","Zn_v1",
+  "Se_v2","Cd_v2","Mo_v2","W_v2","As_v2","Zn_v2",
+  "Se_v3","Cd_v3","Mo_v3","W_v3","As_v3","Zn_v3"
+)])
 
-The \pkg{CausalBKMR} framework fits a sequence of BKMR models to implement the g-formula. At each visit $t \in \{1, 2\}$, separate models for the time-varying confounders were fit for waist circumference and fasting glucose, each regressing on all prior exposures and confounder values through a Gaussian kernel, with $C_0$ entering parametrically. An outcome model for Visit~3 log glucose was then fit on the full exposure and confounder history. All models used component-wise variable selection \citep{bobb_bkmr_2015} and were fit with $24{,}000$ MCMC iterations using 50 knots. All exposures and time-varying confounders were standardised to zero mean and unit variance before entering the kernel. Visit~3 waist and glucose values in the outcome model were imputed via last-observation-carried-forward, since Visit~3 glucose is the outcome itself.
+X <- as.matrix(shs[, c(
+  "waist_v1","glucose_v1","waist_v2","glucose_v2",
+  "age","sex","bmi","study_center","smoking","eGFR"
+)])
 
-We enabled component-wise variable selection in all BKMR models because it serves two purposes in this application: (i) it regularises the high-dimensional kernel against the strong within-metal temporal correlation and (ii) the spike-and-slab prior automatically accounts for multiple testing across the 18 exposure variables, yielding valid Bayesian inference for the components that are selected---a property not shared by frequentist regularisation methods such as the lasso. As a consequence, exposures with near-zero posterior inclusion probability are shrunk to zero and the corresponding credible intervals collapse; these should be read as ``no evidence of association,'' not as missing estimates.
+prepared <- prepare_gbkmr_data(
+  Y = Y, Z = Z, X = X,
+  time_points         = 3,
+  mixture_components  = 6,
+  td_covariates       = 2,
+  baseline_covariates = 6,
+  td_covariate_names  = c("waist", "glucose"),
+  log_transform_mixtures = TRUE
+)
 
-Causal effects were estimated via Monte Carlo g-computation over 40 retained posterior draws (iterations $22{,}000$--$24{,}000$, every 50th). For each draw, $K = 1{,}000$ counterfactual trajectories were simulated under two static exposure regimes: $\mathbf{a}$ (all exposures at their 25th percentile) and $\mathbf{a}^*$ (all at a target percentile $q$). Counterfactual values of $L_t$ were sampled sequentially forward in time---first $L_1$ given $A_0$, then $L_2$ given $(A_0, A_1, L_1)$---and the outcome was predicted conditional on the full counterfactual history. The average causal effect at each $q$ was computed as the posterior mean difference $E[Y_{\mathbf{a}^*}] - E[Y_{\mathbf{a}}]$, with 95\% credible intervals from the 2.5th and 97.5th percentiles pooled across all five imputed datasets.
+detect_variable_patterns(prepared, T = 3)
+\end{verbatim}
 
-We targeted two estimands: (i) the joint mixture causal effect for $q \in \{0.30, 0.35, \ldots, 0.90\}$, yielding a causal dose-response curve, and (ii) single-variable causal effects, shifting one metal at one visit from its 25th to 75th percentile while holding all others at their median.
+\code{detect\_variable\_patterns()} reports the inferred mapping---six mixture components (Se, Cd, Mo, W, As, Zn) across three visits, two time-varying confounders (waist, glucose) at Visits 1 and 2, and six baseline covariates---together with the detected variable types (binary versus continuous). The audit is designed to surface column-ordering mistakes before MCMC begins, when fixing them costs nothing.
 
-\subsubsection*{Application results}
+\subsubsection*{Step 2. Run the main command}
+A single call to \code{gbkmr\_run()} performs the input audit, fits the sequential BKMR mediator and outcome models, runs Monte Carlo g-computation, and returns a \code{gbkmr\_results} object.
 
-Before interpreting the causal effect estimates, we inspected MCMC trace plots for all BKMR models and confirmed good mixing and convergence across chains for each imputed dataset. We additionally verified that conclusions were qualitatively unchanged under alternative prior specifications for the kernel smoothness parameter, supporting the robustness of posterior inference.
+\begin{verbatim}
+fit <- gbkmr_run(
+  data         = prepared,
+  outcome      = "Y",
+  outcome_type = "continuous",
+  time_points  = 3,
+  engine       = "auto",
+  a_probs      = c(0.25, 0.75),
+  iter         = 24000,
+  K            = 1000
+)
+\end{verbatim}
 
-The joint mixture causal effect on log fasting glucose followed a positive, approximately monotonic dose-response (Figure~\ref{fig:dr-joint}). The 95\% credible interval excluded zero above approximately the 45th percentile, with the magnitude of the effect increasing through the upper end of the exposure distribution. At the 75th vs.\ 25th percentile contrast, the average causal effect was $1.01$ standardised units of log glucose (95\% CrI: $0.72$, $1.33$). Examining each metal-timepoint individually (Figure~\ref{fig:forest}), zinc was the dominant contributor to the joint mixture signal: the IQR causal effect of Zn was $0.51$ SD at Visit~1 (95\% CrI: $0.28$, $0.75$), $0.26$ SD at Visit~2 ($0.03$, $0.51$), and $0.36$ SD at Visit~3 ($0.20$, $0.55$). All three Zn-timepoint effects were credibly distinct from zero. Selenium at Visit~1 also showed a positive association ($0.19$ SD; 95\% CrI: $-0.01$, $0.36$; posterior probability of a positive effect: $0.97$). Cadmium at Visit~1 showed an inverse association ($-0.21$ SD; 95\% CrI: $-0.37$, $-0.05$). Several metal-timepoints (Mo, W, As, and the later visits of Se and Cd) had point estimates and credible intervals concentrated at zero: these components were not selected by the spike-and-slab prior in any retained MCMC iteration and should be interpreted as providing no evidence of an association, rather than as having zero-width intervals.
+With \code{engine = "auto"}, a continuous outcome, and all-continuous time-varying confounders, the command routes to the standard \pkg{bkmr} engine and fits three sequential models in this analysis: waist and glucose mediators at the appropriate visits, followed by the outcome model on the full exposure-confounder history. MCMC is run for $24{,}000$ iterations and $K = 1{,}000$ counterfactual trajectories are drawn per retained posterior sample. Had any time-varying confounder been binary, the command would have selected probit BKMR mediator models and Bernoulli sampling automatically (Table~\ref{tab:engine_support}).
 
-\subsubsection*{Sensitivity analyses}
+\subsubsection*{Step 3. Post-processing}
+The \code{gbkmr\_results} object carries the posterior causal contrast, counterfactual means, and component-wise variable importance. Standard S3 methods give the compact and verbose views; the underlying list slots support custom downstream analyses.
 
-We conducted two sensitivity analyses to assess the robustness of the main findings. First, to evaluate whether the metal--glucose associations were driven by participants with established diabetes, we excluded the 265 participants with baseline diabetes (WHO clinical definition; analytic sample $n = 414$). In this subsample, the joint mixture dose-response was substantially attenuated, with the 95\% credible interval covering zero across most quantile contrasts (Figure~\ref{fig:dr-compare}). Single-variable effects were also markedly reduced: Zn(V1) decreased from $0.51$ to $0.01$ SD, Cd(V1) reversed sign and became non-significant, and most other estimates moved toward the null. Two findings remained robust: Se(V1) remained positive and credibly above zero ($0.07$ SD; 95\% CrI: $0.004$, $0.15$), and Zn(V3) retained a borderline positive signal ($0.14$ SD; 95\% CrI: $0.00$, $0.35$).
+\begin{verbatim}
+print(fit)
+# g-BKMR Analysis Results
+# ======================
+# Engine: bkmr
+# Causal Effect (ATE): 1.0073
+# 95% CI: (0.7242, 1.3279)
+# Counterfactual Means:
+#   E[Y^a]  (low):  4.5612
+#   E[Y^a*] (high): 5.5685
 
-Second, to address potential residual confounding by smoking intensity---particularly relevant to the inverse Cd(V1) finding---we additionally adjusted for baseline pack-years alongside the categorical smoking-status variable. For never-smokers, pack-years was set to zero prior to multiple imputation. All findings were robust to this adjustment: the joint dose-response at the 75th vs.\ 25th percentile was $1.06$ SD (95\% CrI: $0.80$, $1.39$), compared with $1.01$ ($0.72$, $1.33$) in the main analysis. Notably, the inverse Cd(V1) effect was essentially unchanged ($-0.22$ SD; 95\% CrI: $-0.35$, $-0.10$), indicating that this association is not explained by smoking intensity alone.
+summary(fit)
+# (same as print, plus MCMC settings and a
+#  "95% CI excludes zero: Yes/No" flag)
+
+# Slots used by downstream plotting and reporting code.
+fit$causal_effect          # ATE, posterior SD, 95% CrI
+fit$counterfactual_means   # E[Y^a], E[Y^{a*}]
+fit$variable_importance    # single-metal IQR effects
+fit$convergence            # ESS and Geweke z per model
+
+# Dose-response curve over a grid of upper percentiles.
+grid    <- seq(0.30, 0.90, by = 0.05)
+dr_fits <- lapply(grid, function(q) gbkmr_run(
+  data         = prepared, outcome = "Y",
+  outcome_type = "continuous", time_points = 3,
+  engine       = "auto",
+  a_probs      = c(0.25, q),
+  iter         = 24000, K = 1000
+))
+\end{verbatim}
+
+For this analysis, the 75th-versus-25th percentile joint contrast was $1.01$ standardised units of log glucose (95\% CrI: $0.72$, $1.33$). Sweeping the upper percentile over $q \in \{0.30, 0.35, \ldots, 0.90\}$ produces the dose-response curve in Figure~\ref{fig:dr-joint}, which the user assembles from the \code{causal\_effect} slot of each \code{dr\_fits} element. Single-metal IQR contributions from \code{fit\$variable\_importance}, sensitivity analyses (excluding baseline diabetes, additionally adjusting for pack-years), and biological interpretation of the per-metal pattern are reported in the supplementary SHS application paper. The point of this section is that all of those analyses reuse the same three commands above with a different input data frame or a different argument value.
 
 \begin{figure}[h]
 \centering
@@ -446,26 +509,6 @@ Second, to address potential residual confounding by smoking intensity---particu
 \label{fig:dr-joint}
 \end{figure}
 
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig_forest_full.png}
-\caption{Single-variable causal effects (IQR shift, 25th to 75th percentile). Bars: 95\% credible intervals. Full sample, $n = 679$.}
-\label{fig:forest}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\includegraphics[width=\textwidth]{figures/fig_dr_full.png}
-\caption{Full sample ($n = 679$)}
-\end{subfigure}\hfill
-\begin{subfigure}{0.48\textwidth}
-\includegraphics[width=\textwidth]{figures/fig_dr_nodm.png}
-\caption{Excluding baseline diabetes ($n = 414$)}
-\end{subfigure}
-\caption{Sensitivity: joint dose-response in full sample (left) vs.\ excluding baseline diabetes (right).}
-\label{fig:dr-compare}
-\end{figure}
 
 \subsection*{fastBKMR computational benchmark}
 
