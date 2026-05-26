@@ -285,22 +285,33 @@ Using \pkg{CausalBKMR} with component-wise variable selection, we estimated the 
 
 \subsubsection*{Simulation results}
 
-Table~\ref{tab:sim_results} summarises the empirical bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimates across the $500$ simulated datasets in each scenario. \pkg{CausalBKMR} recovered the target contrast with low bias across all six scenarios, including the quadratic and interaction-driven exposure-response surfaces (scenarios 1, 3, 4, 5) where the functional form is not known in advance. Coverage was at or near the nominal level for the continuous-outcome scenarios ($0.91$--$0.98$) and for the three-visit binary scenarios ($0.93$--$0.94$); the two-visit binary scenario with low confounding and an interaction (scenario 4) showed some undercoverage ($0.77$), which we attribute to the combination of a binary outcome with a modest per-replicate sample size. Overall, these results indicate that the standard \pkg{bkmr} engine recovers the g-BKMR estimand with low bias under correctly specified longitudinal data-generating mechanisms.
+Table~\ref{tab:sim_results} summarises the empirical bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimates across the $500$ simulated datasets in each scenario, under the default component-wise variable selection (\code{varsel = TRUE}) and without it. \pkg{CausalBKMR} recovered the target contrast with low bias across all six scenarios, including the quadratic and interaction-driven exposure-response surfaces (scenarios 1, 3, 4, 5) where the functional form is not known in advance. Coverage was at or near the nominal level for the continuous-outcome scenarios ($0.91$--$0.98$ with variable selection) and for the three-visit binary scenarios ($0.93$--$0.94$); the two-visit binary scenario with low confounding and an interaction (scenario 4) showed some undercoverage ($0.77$ with variable selection), which we attribute to the combination of a binary outcome with a modest per-replicate sample size. The two configurations produced similar bias in most scenarios; turning off variable selection raised coverage toward or above the nominal level (for example, $0.99$ in scenarios 1--3) but at substantially higher computational cost, because effects are then estimated for all predictors rather than a selected subset. We therefore use \code{varsel = TRUE} as the default. Overall, these results indicate that the standard \pkg{bkmr} engine recovers the g-BKMR estimand with low bias under correctly specified longitudinal data-generating mechanisms.
 
 \begin{table}[h]
 \centering
-\caption{Bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimate across the $500$ simulated datasets in each scenario. Scenario definitions are given in Table~\ref{tab:sim_scenarios}.}
+\caption{Bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimate across the $500$ simulated datasets in each scenario, with and without component-wise variable selection. Scenario definitions are given in Table~\ref{tab:sim_scenarios}.}
 \label{tab:sim_results}
-\begin{tabular}{ccrrr}
+\begin{tabular}{ccc rrr}
 \toprule
-Scenario & Outcome & Bias & MSE & Coverage \\
+Scenario & Outcome & Variable selection & Bias & MSE & Coverage \\
 \midrule
-1 & continuous & $0.00$    & 0.01 & 0.98 \\
-2 & continuous & $0.01$    & 0.03 & 0.96 \\
-3 & continuous & $-0.13$   & 0.05 & 0.91 \\
-4 & binary     & $0.03$    & 0.00 & 0.77 \\
-5 & binary     & $-0.02$   & 0.00 & 0.93 \\
-6 & binary     & $-0.02$   & 0.00 & 0.94 \\
+1 & continuous & yes & $0.00$  & 0.01 & 0.98 \\
+1 & continuous & no  & $-0.00$ & 0.02 & 0.99 \\
+\midrule
+2 & continuous & yes & $0.01$  & 0.03 & 0.96 \\
+2 & continuous & no  & $-0.02$ & 0.04 & 0.99 \\
+\midrule
+3 & continuous & yes & $-0.13$ & 0.05 & 0.91 \\
+3 & continuous & no  & $-0.11$ & 0.07 & 0.99 \\
+\midrule
+4 & binary     & yes & $0.03$  & 0.00 & 0.77 \\
+4 & binary     & no  & $0.01$  & 0.00 & 0.99 \\
+\midrule
+5 & binary     & yes & $-0.02$ & 0.00 & 0.93 \\
+5 & binary     & no  & $0.01$  & 0.00 & 0.97 \\
+\midrule
+6 & binary     & yes & $-0.02$ & 0.00 & 0.94 \\
+6 & binary     & no  & $0.00$  & 0.00 & 0.98 \\
 \bottomrule
 \end{tabular}
 \end{table}
