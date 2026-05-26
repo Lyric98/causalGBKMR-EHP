@@ -99,7 +99,7 @@
 
 \noindent\textbf{Methods.} \pkg{CausalBKMR} implements g-BKMR by combining the parametric g-formula with Bayesian kernel machine regression. The module accepts longitudinal mixture exposures, time-varying confounders, baseline covariates, and continuous or binary outcomes; it fits sequential BKMR models for each time-varying confounder and for the outcome, then simulates counterfactual outcome distributions under user-specified exposure trajectories. Binary outcomes use probit BKMR with risk-difference reporting; binary time-varying confounders use probit BKMR with Bernoulli counterfactual sampling during Monte Carlo g-computation. The optional fastBKMR engine, available via \code{engine = "fastbkmr"}, implements a median-posterior subset-aggregation strategy for continuous-outcome, continuous-confounder analyses at MESA-scale sample sizes; the default \code{engine = "auto"} setting falls back to standard BKMR whenever any binary variable is detected.
 
-\noindent\textbf{Results.} A six-scenario simulation study with continuous and binary outcomes shows that \pkg{CausalBKMR} consistently exhibits low bias and near-nominal coverage across linear, quadratic, and interaction-driven exposure-response surfaces, performing comparably to the parametric g-formula with correct model specification and outperforming traditional regression, the misspecified parametric g-formula, and BKMR with time-grouped variable selection. In an application to the Strong Heart Study, we estimate the joint causal effect of six urinary metals measured at three visits on log fasting blood glucose: the 75th-versus-25th percentile contrast was $1.01$ standardised units (95\% credible interval: $0.72$, $1.33$), with zinc identified as the dominant contributor across all visits. A separate computational benchmark on MESA-scale data ($n = 6{,}000$, matched at $15{,}000$ MCMC iterations across all engines) shows that the optional fastBKMR engine completes a full three-model g-formula sequence in approximately $2.5$ hours on 10 cores, $14.7\times$ faster than single-core standard BKMR on the same full-cohort sample ($36.6$ hours) and $1.6\times$ faster than the subsampled $n = 2{,}000$ standard-BKMR baseline ($4.0$ hours) while using three times as much data, with posterior summaries consistent with the standard engine and $2$- to $10$-fold lower between-replication variance than a single $n = 500$ subsample fit.
+\noindent\textbf{Results.} A six-scenario simulation study with continuous and binary outcomes shows that \pkg{CausalBKMR} recovers the target causal contrast with low bias and near-nominal coverage across linear, quadratic, and interaction-driven exposure-response surfaces. In an application to the Strong Heart Study, we estimate the joint causal effect of six urinary metals measured at three visits on log fasting blood glucose: the 75th-versus-25th percentile contrast was $1.01$ standardised units (95\% credible interval: $0.72$, $1.33$), with zinc identified as the dominant contributor across all visits. A separate computational benchmark on MESA-scale data ($n = 6{,}000$, matched at $15{,}000$ MCMC iterations across all engines) shows that the optional fastBKMR engine completes a full three-model g-formula sequence in approximately $2.5$ hours on 10 cores, $14.7\times$ faster than single-core standard BKMR on the same full-cohort sample ($36.6$ hours) and $1.6\times$ faster than the subsampled $n = 2{,}000$ standard-BKMR baseline ($4.0$ hours) while using three times as much data, with posterior summaries consistent with the standard engine and $2$- to $10$-fold lower between-replication variance than a single $n = 500$ subsample fit.
 
 \noindent\textbf{Discussion.} \pkg{CausalBKMR} extends \pkg{causalmixtures} to time-varying environmental mixtures under longitudinal confounding, filling a software gap between single-time-point mixture-analysis packages and parametric longitudinal g-formula packages. The benchmark results show that the fastBKMR path makes full-cohort g-BKMR computationally practical for cohort-scale environmental studies, while the standard BKMR path remains the default for smaller samples and is required for any analysis with binary outcomes or binary time-varying confounders. By packaging the entire pipeline -- data preparation, sequential BKMR fitting, Monte Carlo g-computation, posterior summarisation, and diagnostics -- into a small command family, the module lowers the barrier to applying causal mixture methods in longitudinal environmental health studies.
 
@@ -234,7 +234,7 @@ The contrast $\bar{\mathbf{a}}$ versus $\bar{\mathbf{a}}^*$ should represent a s
 
 \subsection*{Simulation study}
 
-We evaluate the ability of \pkg{CausalBKMR} to estimate the joint effect of a mixture in comparison to (i) the traditional regression approach with direct confounding adjustment in the outcome model, (ii) the parametric g-formula, (iii) the parametric g-formula with correct model specification, and (iv) BKMR with hierarchical variable selection grouped by time point (which ignores time-dependent confounding).
+We evaluate whether \pkg{CausalBKMR} recovers the joint causal effect of a time-varying mixture under known data-generating mechanisms, across scenarios that vary the strength of time-varying confounding, the linearity of the exposure-response surface, and the presence of interactions.
 
 \subsubsection*{Setup}
 
@@ -281,88 +281,29 @@ For each scenario, $500$ datasets of $500$ observations were sampled from the po
     L_{2i} &= h_L(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{L}_{1i}) + \mathbf{C}_i^\top \boldsymbol{\beta} + \epsilon_{L_{2i}}, \label{eq:sim_L2} \\
     Y_i &= h_Y(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{A}_{2i}, \mathbf{L}_{1i}, \mathbf{L}_{2i}) + \mathbf{C}_i^\top \boldsymbol{\theta} + \epsilon_{Y_i}. \label{eq:sim_Y}
 \end{align}
-Using \pkg{CausalBKMR}, we estimated the change in the potential outcome $Y$ for a shift of the exposure mixture from $\mathbf{a}$ (all exposures at the $25^{\text{th}}$ percentile of the underlying dataset) to $\mathbf{a}^*$ (all exposures at the $75^{\text{th}}$ percentile of the underlying dataset).
-
-We compare the performance of the following six methods: (1) CausalBKMR with variable selection; (2) CausalBKMR without variable selection; (3) parametric g-formula with correct model specification; (4) traditional regression---linear or logistic regression with direct adjustment for all exposures and confounders at all time points; (5) parametric g-formula adjusting for all exposures and covariates; and (6) BKMR with hierarchical variable selection grouped by time points.
+Using \pkg{CausalBKMR} with component-wise variable selection, we estimated the change in the potential outcome $Y$ for a shift of the exposure mixture from $\mathbf{a}$ (all exposures at the $25^{\text{th}}$ percentile of the underlying dataset) to $\mathbf{a}^*$ (all exposures at the $75^{\text{th}}$ percentile of the underlying dataset). For each scenario we compared the posterior mean estimate against the true average treatment effect computed analytically from the population data-generating mechanism.
 
 \subsubsection*{Simulation results}
 
-Tables~\ref{tab:sim_continuous} and~\ref{tab:sim_binary} summarise the empirical bias, mean squared error (MSE), and coverage probabilities of the average treatment effect estimates across the $500$ simulated datasets. Figure~\ref{fig:sim_results} visualises these results.
-
-The parametric g-formula with correct model specification yielded low bias and high coverage, as expected. However, in real-world applications the true functional form is unknown, particularly when relationships involve quadratic terms or interactions; thus, although the correctly specified g-formula is a useful benchmark in simulation, its practical utility is limited. Traditional linear and logistic regression models exhibited substantial bias, particularly under nonlinear underlying relationships, because they cannot capture the time-varying structure of the data.
-
-When the underlying relationship was linear (scenarios 2 and 6), coverage of the parametric g-formula was reasonable; otherwise (scenarios 1, 3, 4, 5), coverage dropped sharply, reflecting the heavy reliance of the parametric g-formula on correct model specification. \pkg{CausalBKMR} consistently exhibited low bias across scenarios, comparable to the correctly specified g-formula benchmark. \pkg{CausalBKMR} with and without variable selection produced similar bias and coverage in most cases; the no-selection variant slightly outperformed in some scenarios but at substantially higher computational cost (it estimates effects for all predictors rather than a selected subset). We therefore recommend \pkg{CausalBKMR} with variable selection in practice. BKMR with grouped variable selection exhibited the highest bias and lowest coverage among all methods, particularly under strong confounding, because it ignores time-varying confounding.
+Table~\ref{tab:sim_results} summarises the empirical bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimates across the $500$ simulated datasets in each scenario. \pkg{CausalBKMR} recovered the target contrast with low bias across all six scenarios, including the quadratic and interaction-driven exposure-response surfaces (scenarios 1, 3, 4, 5) where the functional form is not known in advance. Coverage was at or near the nominal level for the continuous-outcome scenarios ($0.91$--$0.98$) and for the three-visit binary scenarios ($0.93$--$0.94$); the two-visit binary scenario with low confounding and an interaction (scenario 4) showed some undercoverage ($0.77$), which we attribute to the combination of a binary outcome with a modest per-replicate sample size. Overall, these results indicate that the standard \pkg{bkmr} engine recovers the g-BKMR estimand with low bias under correctly specified longitudinal data-generating mechanisms.
 
 \begin{table}[h]
 \centering
-\caption{Bias, mean squared error (MSE), and coverage probabilities of the ATE estimates from our simulation under varying underlying relationships with a continuous outcome. Comparison of \pkg{CausalBKMR} with and without variable selection, the parametric g-formula, traditional linear regression, BKMR with grouped variable selection, and the parametric g-formula with correct model specification.}
-\label{tab:sim_continuous}
-\begin{tabular}{cl rrr}
+\caption{Bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimate across the $500$ simulated datasets in each scenario. Scenario definitions are given in Table~\ref{tab:sim_scenarios}.}
+\label{tab:sim_results}
+\begin{tabular}{ccrrr}
 \toprule
-Scenario & Method & Bias & MSE & Coverage \\
+Scenario & Outcome & Bias & MSE & Coverage \\
 \midrule
-1 & CausalBKMR              &  0.00 & 0.01 & 0.98 \\
-1 & g-formula               &  0.26 & 0.08 & 0.44 \\
-1 & Linear model            &  0.26 & 0.08 & 0.47 \\
-1 & BKMR-group              & $-0.02$ & 0.01 & 0.91 \\
-1 & CausalBKMR (no varsel)  & $-0.00$ & 0.02 & 0.99 \\
-1 & g-formula (correct)     &  0.01 & 0.01 & 0.93 \\
-\midrule
-2 & CausalBKMR              &  0.01 & 0.03 & 0.96 \\
-2 & g-formula               & $-0.14$ & 0.04 & 0.84 \\
-2 & Linear model            & $-0.14$ & 0.04 & 0.81 \\
-2 & BKMR-group              & $-0.02$ & 0.63 & 0.01 \\
-2 & CausalBKMR (no varsel)  & $-0.02$ & 0.04 & 0.99 \\
-2 & g-formula (correct)     & $-0.00$ & 0.02 & 0.95 \\
-\midrule
-3 & CausalBKMR              & $-0.13$ & 0.05 & 0.91 \\
-3 & g-formula               &  0.76 & 0.64 & 0.11 \\
-3 & Linear model            & $-0.38$ & 0.25 & 0.78 \\
-3 & BKMR-group              &  1.19 & 1.47 & 0.00 \\
-3 & CausalBKMR (no varsel)  & $-0.11$ & 0.07 & 0.99 \\
-3 & g-formula (correct)     &  0.09 & 0.03 & 0.95 \\
+1 & continuous & $0.00$    & 0.01 & 0.98 \\
+2 & continuous & $0.01$    & 0.03 & 0.96 \\
+3 & continuous & $-0.13$   & 0.05 & 0.91 \\
+4 & binary     & $0.03$    & 0.00 & 0.77 \\
+5 & binary     & $-0.02$   & 0.00 & 0.93 \\
+6 & binary     & $-0.02$   & 0.00 & 0.94 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\begin{table}[h]
-\centering
-\caption{Bias, mean squared error (MSE), and coverage probabilities of the ATE estimates from our simulation under varying underlying relationships with a binary outcome. Comparison of \pkg{CausalBKMR} with and without variable selection, the parametric g-formula, traditional logistic regression, BKMR with grouped selection, and the parametric g-formula with correct model specification.}
-\label{tab:sim_binary}
-\begin{tabular}{cl rrr}
-\toprule
-Scenario & Method & Bias & MSE & Coverage \\
-\midrule
-4 & CausalBKMR              &  0.03 & 0.00 & 0.77 \\
-4 & g-formula               &  0.03 & 0.00 & 0.80 \\
-4 & Linear model            & $-0.25$ & 0.09 & 0.68 \\
-4 & BKMR-group              &  0.03 & 0.00 & 0.81 \\
-4 & CausalBKMR (no varsel)  &  0.01 & 0.00 & 0.99 \\
-4 & g-formula (correct)     & $-0.03$ & 0.00 & 0.83 \\
-\midrule
-5 & CausalBKMR              & $-0.02$ & 0.00 & 0.93 \\
-5 & g-formula               &  0.08 & 0.14 & 0.78 \\
-5 & Linear model            &  0.07 & 0.01 & 0.93 \\
-5 & BKMR-group              &  0.08 & 0.01 & 0.45 \\
-5 & CausalBKMR (no varsel)  &  0.01 & 0.00 & 0.97 \\
-5 & g-formula (correct)     & $-0.02$ & 0.00 & 0.92 \\
-\midrule
-6 & CausalBKMR              & $-0.02$ & 0.00 & 0.94 \\
-6 & g-formula               & $-0.10$ & 0.02 & 0.92 \\
-6 & Linear model            &  0.04 & 0.01 & 0.95 \\
-6 & BKMR-group              &  0.07 & 0.01 & 0.79 \\
-6 & CausalBKMR (no varsel)  &  0.00 & 0.00 & 0.98 \\
-6 & g-formula (correct)     & $-0.02$ & 0.00 & 0.93 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.95\textwidth]{figures/fig_simulation.png}
-\caption{Bias, MSE, and coverage of the ATE estimates across the six simulation scenarios, comparing \pkg{CausalBKMR} (with and without variable selection) against the parametric g-formula, the parametric g-formula with correct model specification, traditional regression, and BKMR with grouped variable selection. Left column: continuous outcome (scenarios 1--3); right column: binary outcome (scenarios 4--6). Dashed red line indicates zero bias (top), zero MSE (middle), or nominal $95\%$ coverage (bottom).}
-\label{fig:sim_results}
-\end{figure}
 
 \subsection*{Application: command walkthrough on the Strong Heart Study}
 
