@@ -320,7 +320,7 @@ Scenario & Outcome & Variable selection & Bias & MSE & Coverage \\
 
 We illustrate the three-step \pkg{CausalBKMR} workflow on a metal-mixture analysis of fasting blood glucose in the Strong Heart Study \citep[SHS;][]{shs_lee_1990}. The intent of this section is to demonstrate what each command does on a realistic problem; full scientific findings, single-metal contributions, and sensitivity analyses are reported in the accompanying SHS application paper (in preparation).
 
-The analytic sample contains $n = 679$ American Indian adults with urinary measurements of six metals (Se, Cd, Mo, W, As, Zn) at three visits (Visits 1--3), waist circumference and fasting glucose at Visits 1 and 2 as time-varying confounders, and six baseline covariates (age, sex, body mass index, study centre, smoking status, baseline kidney function). The outcome is log fasting glucose at Visit~3 (skewness $1.8$--$2.1$ on the original scale). The assumed causal structure is in Figure~\ref{fig:dag} and the cross-timepoint exposure correlation pattern in Figure~\ref{fig:corr}; the latter motivates a kernel-based approach because within-metal cross-visit correlations of $0.2$--$0.6$ make parametric g-computation unstable.
+The analytic sample contains $n = 679$ American Indian adults with urinary measurements of six metals (Se, Cd, Mo, W, As, Zn) at three visits (Visits 1--3), waist circumference and fasting glucose at Visits 1 and 2 as time-varying confounders, and six baseline covariates (age, sex, body mass index, study centre, smoking status, baseline kidney function). The outcome is log fasting glucose at Visit~3 (skewness $1.8$--$2.1$ on the original scale). The assumed causal structure is shown in Figure~\ref{fig:dag}. The 18 metal-timepoint exposures are strongly correlated within metals across visits, which is what motivates a kernel-based approach over parametric g-computation; the full correlation matrix and a short discussion are given in the Appendix (Figure~\ref{fig:corr}).
 
 \subsubsection*{Step 1. Data preparation}
 The first step assembles the user's raw data frame into three pieces that \code{prepare\_gbkmr\_data()} consumes: an outcome vector \code{Y}, a mixture matrix \code{Z} ordered by visit, and a covariate matrix \code{X} that lists every time-varying confounder across all visits before the baseline block.
@@ -449,13 +449,6 @@ For this analysis, the 75th-versus-25th percentile joint contrast was $1.01$ sta
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig_cross_timepoint_corr_matrix.png}
-\caption{Spearman correlation matrix of the 18 metal-timepoint exposures (six metals $\times$ three visits).}
-\label{fig:corr}
-\end{figure}
-
-\begin{figure}[h]
-\centering
 \includegraphics[width=0.85\textwidth]{figures/fig_dr_full.png}
 \caption{Joint causal dose-response of the metal mixture on log fasting glucose, full sample ($n = 679$). Reference: 25th percentile. Shaded band: 95\% credible interval.}
 \label{fig:dr-joint}
@@ -569,5 +562,25 @@ The authors declare that they have no competing interests.
 % REFERENCES
 % ============================================================================
 \bibliography{references}
+
+% ============================================================================
+% APPENDIX
+% ============================================================================
+\clearpage
+\appendix
+\renewcommand{\thefigure}{A\arabic{figure}}
+\setcounter{figure}{0}
+
+\section*{Appendix}
+
+\subsection*{Cross-timepoint exposure correlation in the Strong Heart Study application}
+Within-metal cross-visit correlations among the 18 metal-timepoint exposures ranged from $0.2$ to $0.6$ (Spearman; Figure~\ref{fig:corr}). This degree of multicollinearity destabilises parametric g-computation fit with standard linear models, to the point that it did not produce interpretable estimates in preliminary analyses. The kernel-based \pkg{CausalBKMR} engine combines the Gaussian kernel with Bayesian regularisation and remains stable under this correlation structure, which is why the application uses it rather than a parametric g-formula.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig_cross_timepoint_corr_matrix.png}
+\caption{Spearman correlation matrix of the 18 metal-timepoint exposures (six metals $\times$ three visits) in the Strong Heart Study application.}
+\label{fig:corr}
+\end{figure}
 
 \end{document}
