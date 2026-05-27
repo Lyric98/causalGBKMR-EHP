@@ -115,7 +115,41 @@
 
 Environmental epidemiology studies often measure multiple correlated exposures repeatedly over time. In studies of metals, air pollution, endocrine-disrupting chemicals, or dietary contaminants, the scientific question is rarely whether one exposure at one time point is associated with the outcome. Investigators instead ask how a mixture history affects a later health outcome, whether the effect is nonlinear, and whether the same chemical contributes differently across developmental windows or clinical visits.
 
-Longitudinal mixtures create a causal problem that is not solved by adding all repeated exposures and covariates to a conventional regression model. Time-varying covariates can be affected by earlier exposure and can also predict later exposure and the outcome. Conditioning naively on these covariates may block part of the exposure effect or introduce bias, whereas failing to account for them may leave time-varying confounding uncontrolled. Figure~\ref{fig:dag} summarizes the target data structure: baseline covariates $C_0$ influence the exposure mixture $A_t$, time-varying confounders $L_t$, and outcome $Y$; earlier mixtures affect later confounders; and later confounders affect subsequent mixtures and the final outcome.
+Longitudinal mixtures create a causal problem that is not solved by adding all repeated exposures and covariates to a conventional regression model. Time-varying covariates can be affected by earlier exposure and can also predict later exposure and the outcome. Conditioning naively on these covariates may block part of the exposure effect or introduce bias, whereas failing to account for them may leave time-varying confounding uncontrolled. Figure~\ref{fig:dag} shows the data structure we have in mind: baseline covariates $C_0$ influence the exposure mixture $A_t$, the time-varying confounders $L_t$, and the outcome $Y$; earlier mixtures affect later confounders; and later confounders affect both subsequent mixtures and the final outcome. The quantity of interest is the causal effect of the whole exposure trajectory on $Y$ -- the contrast between the outcome we would see under one mixture history and the outcome under another -- which is what makes the feedback between $A_t$ and $L_t$ a problem to handle rather than a nuisance to condition away.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.6cm and 1.8cm,
+    every node/.style={font=\large},
+    arr/.style={-{Stealth[length=6pt]}, thick}
+]
+\node (A0) {$A_0$};
+\node (A1) [right=of A0] {$A_1$};
+\node (A2) [right=of A1] {$A_2$};
+\node (Y)  [right=of A2] {$Y$};
+\node (C0) [below=of A0] {$C_0$};
+\node (L1) [below=of A1] {$L_1$};
+\node (L2) [below=of A2] {$L_2$};
+\draw[arr] (A0) -- (A1);
+\draw[arr] (A1) -- (A2);
+\draw[arr] (A2) -- (Y);
+\draw[arr] (C0) -- (L1);
+\draw[arr] (L1) -- (L2);
+\draw[arr] (C0) -- (A0);
+\draw[arr] (L1) -- (A1);
+\draw[arr] (L2) -- (A2);
+\draw[arr] (A0) -- (L1);
+\draw[arr] (A1) -- (L2);
+\draw[arr, bend left=35]  (A0) to (Y);
+\draw[arr, bend left=20]  (A1) to (Y);
+\draw[arr, bend right=60] (C0) to (Y);
+\draw[arr, bend right=50] (L1) to (Y);
+\draw[arr, bend right=30] (L2) to (Y);
+\end{tikzpicture}
+\caption{Directed acyclic graph for time-varying exposures ($A_t$), time-varying confounders ($L_t$), baseline covariates ($C_0$), and outcome ($Y$) over three visits.}
+\label{fig:dag}
+\end{figure}
 
 Several R packages support related pieces of this problem. The \pkg{bkmr} package implements Bayesian kernel machine regression for flexible analysis of correlated exposure mixtures, including nonlinear exposure-response surfaces, interactions, and posterior inclusion probabilities \citep{bobb_bkmr_2018}. The \pkg{qgcomp} and \pkg{gWQS} packages implement index-based mixture methods that estimate interpretable joint mixture effects under more structured regression assumptions \citep{qgcomp_package,gwqs_package}. The \pkg{causalmixtures} package provides a suite of BKMR-based commands for causal mixture analyses, currently organized around BKMR-CMA for causal mediation analysis and BKMR-MI for analyses with multiple imputation \citep{causalmixtures_package}. For longitudinal causal inference, \pkg{gfoRmula} and related g-formula software estimate effects of time-varying treatment strategies under measured time-varying confounding \citep{mcgrath_gformula_2020,gformula_package}, but these tools do not provide a BKMR mixture-response model as the core exposure-response engine. Thus, existing software covers flexible mixture modeling, BKMR-based mediation and missing-data workflows, or longitudinal g-formula estimation, but does not provide an automated implementation of g-BKMR for time-varying environmental mixtures.
 
@@ -134,29 +168,31 @@ Consider $n$ individuals followed over $T$ visits. At visit $t$, let $A_t = (A_{
 \]
 The default contrast in the \pkg{CausalBKMR} command family compares all mixture components at the 75th percentile with all mixture components at the 25th percentile across all visits, although users can define component-specific and time-specific trajectories.
 
-The estimator uses the longitudinal g-formula to express counterfactual outcome means through the observed-data distribution of the outcome and time-varying confounders. \pkg{CausalBKMR} fits this distribution sequentially. For each post-baseline time-varying confounder, the module fits a BKMR model for that confounder conditional on the exposure and covariate history. It then fits a BKMR outcome model conditional on the exposure and covariate history. Posterior draws from these models are used to simulate counterfactual confounder histories and outcomes under $\bar{\mathbf{a}}$ and $\bar{\mathbf{a}}^*$, producing posterior samples of $ACE$.
+This effect is causal only under the usual longitudinal assumptions, and the command does not enforce them. Consistency asks that a participant's observed outcome under their observed exposure history is the same as their counterfactual outcome under that history. Sequential exchangeability asks that, once the measured exposure and covariate history up to each visit is conditioned on, there is no remaining unmeasured time-varying confounding. Positivity asks that the trajectories being compared could actually occur within every observed covariate history. None of these can be checked from the data alone; they rest on study design, measurement quality, subject-matter knowledge, and sensitivity analysis.
 
-BKMR is used because the mixture-response function can be nonlinear and non-additive. In each BKMR model, the kernel component captures the joint effect of the mixture and relevant covariate history, while baseline covariates enter as linear terms. Variable selection can be incorporated through BKMR posterior inclusion probabilities, allowing the fitted outcome model to identify mixture components and time windows that contribute most strongly to the estimated response surface.
+When they hold, the average causal effect is recovered from the observed data by the longitudinal g-formula, which writes the counterfactual outcome means in terms of the observed-data distribution of the outcome and the time-varying confounders. \pkg{CausalBKMR} fits that distribution one piece at a time: for each post-baseline confounder it fits a model for the confounder given the exposure and covariate history, then a model for the outcome given the full history. Drawing from these fitted models forward in time produces counterfactual confounder and outcome trajectories under $\bar{\mathbf{a}}$ and $\bar{\mathbf{a}}^*$, and the difference in simulated outcome means gives posterior samples of $ACE$.
+
+Each of these pieces is a Bayesian kernel machine regression \citep{bobb_bkmr_2015}. BKMR models the conditional mean as $g(E[Y]) = h(\mathbf{z}) + \mathbf{x}^\top\boldsymbol{\beta}$: the mixture (here together with the relevant covariate history) enters through a flexible function $h$ given a Gaussian kernel prior, while baseline covariates $\mathbf{x}$ enter linearly. Because $h$ is not forced to be additive or linear, BKMR picks up interactions among components without the analyst naming them. A spike-and-slab prior on the kernel inputs adds component-wise variable selection, and the posterior inclusion probabilities it produces point to the components and time windows that matter most. We use this same model for every confounder and outcome fit in the g-formula sequence.
 
 \subsection*{fastBKMR engine}
 Standard BKMR can become computationally expensive when the sample size is large or when the longitudinal structure requires many sequential confounder models. For analyses in which the outcome and all time-varying confounders are continuous, \pkg{CausalBKMR} can use \pkg{fbkmr} through the \code{engine = "fastbkmr"} option. The fastBKMR path implements the median-posterior subset-aggregation strategy of \citet{sonabend_fastbkmr_2026}, which fits Gaussian-kernel BKMR independently on multiple data subsets and combines posterior summaries through the median of subset posteriors.
 
 \subsection*{Engine support and outcome--confounder types}
-The two engines do not have identical support for outcome and time-varying-confounder types. Table~\ref{tab:engine_support} summarises the current policy. The standard \pkg{bkmr} engine accepts every combination of continuous or binary outcome and continuous or binary time-varying confounder. A binary outcome triggers a probit BKMR outcome model and reporting of the causal effect as a risk difference on the probability scale. A binary time-varying confounder triggers a probit BKMR model for that confounder and Bernoulli sampling of its counterfactual values during Monte Carlo g-computation, so the modelled distribution of $L_t$ stays consistent with its observed scale. The \pkg{fbkmr} engine is currently restricted to fully continuous problems: \code{gbkmr\_run()} raises a hard error if \code{engine = "fastbkmr"} is requested together with any binary $Y$ or any binary $L_t$, because the median-posterior aggregation strategy has been validated for Gaussian kernels only. The default \code{engine = "auto"} setting falls back to \code{engine = "bkmr"} as soon as a binary outcome or a binary $L_t$ is detected; users who want to force one engine can do so explicitly.
+The two engines do not have identical support for outcome and time-varying-confounder types. Table~\ref{tab:engine_support} summarises the current policy. The standard \pkg{bkmr} engine accepts every combination of continuous or binary outcome and continuous or binary time-varying confounder. A binary outcome triggers a probit BKMR outcome model and reporting of the causal effect as a risk difference on the probability scale. A binary time-varying confounder triggers a probit BKMR model for that confounder and Bernoulli sampling of its counterfactual values during Monte Carlo g-computation, so the modelled distribution of $L_t$ stays consistent with its observed scale. The \pkg{fbkmr} engine is currently restricted to fully continuous problems: \code{engine = "fastbkmr"} is unsupported when the outcome or any time-varying confounder is binary, and \code{gbkmr\_run()} stops with an explicit error in that case, because the median-posterior aggregation strategy has been validated for Gaussian kernels only. The default \code{engine = "auto"} setting falls back to \code{engine = "bkmr"} as soon as a binary outcome or a binary $L_t$ is detected; users who want to force one engine can do so explicitly.
 
 \begin{table}[h]
 \centering
 \setlength{\tabcolsep}{6pt}
-\caption{Engine support for \code{gbkmr\_run()} as a function of outcome type and time-varying confounder type. ``Gaussian'' indicates the standard Gaussian-kernel path; ``probit'' indicates that the corresponding BKMR model uses a probit link (and that counterfactual $L_t$ are then drawn by Bernoulli sampling during Monte Carlo g-computation); ``hard error'' indicates the command stops with an explicit message. The default \code{engine = "auto"} setting falls back to \pkg{bkmr} whenever any binary variable is detected.}
+\caption{Engine support for \code{gbkmr\_run()} as a function of outcome type and time-varying confounder type. ``Gaussian'' indicates the standard Gaussian-kernel path; ``probit'' indicates that the corresponding BKMR model uses a probit link (and that counterfactual $L_t$ are then drawn by Bernoulli sampling during Monte Carlo g-computation); ``unsupported'' indicates the engine does not handle that combination, in which case the command stops with an explicit message. The default \code{engine = "auto"} setting falls back to \pkg{bkmr} whenever any binary variable is detected.}
 \label{tab:engine_support}
 \begin{tabular}{llll}
 \toprule
 Outcome $Y$ & Confounder $L_t$ & \code{engine = "bkmr"} & \code{engine = "fastbkmr"} \\
 \midrule
-continuous & all continuous & Gaussian              & Gaussian   \\
-binary     & all continuous & Probit $Y$            & Hard error \\
-continuous & any binary     & Probit $L_t$          & Hard error \\
-binary     & any binary     & Probit $Y$ + $L_t$    & Hard error \\
+continuous & all continuous & Gaussian              & Gaussian     \\
+binary     & all continuous & Probit $Y$            & Unsupported  \\
+continuous & any binary     & Probit $L_t$          & Unsupported  \\
+binary     & any binary     & Probit $Y$ + $L_t$    & Unsupported  \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -218,9 +254,6 @@ Because \pkg{CausalBKMR} fits several Bayesian models within one longitudinal wo
 
 After fitting, the package prints the estimated causal effect, counterfactual means, model sequence, causal assumptions, and convergence checks. The current diagnostic layer reports effective sample size and Geweke statistics for fitted BKMR models. When diagnostics indicate poor mixing or nonstationarity, users should increase the number of MCMC iterations, use a later post-burn-in selection window, inspect trace plots, and consider simplifying highly unstable exposure or covariate histories.
 
-\subsection*{Identifiability assumptions}
-The numerical output of \pkg{CausalBKMR} has a causal interpretation only under standard longitudinal causal assumptions. Consistency requires the observed outcome under the observed exposure history to equal the corresponding counterfactual outcome. Sequential exchangeability requires no unmeasured time-varying confounding after conditioning on the measured exposure and covariate history at each visit. Positivity requires that the exposure trajectories being compared are supported within the observed covariate histories. These assumptions are not guaranteed by the command; they must be justified by study design, measurement quality, subject-matter knowledge, and sensitivity analyses.
-
 \subsection*{Choosing exposure contrasts}
 The contrast $\bar{\mathbf{a}}$ versus $\bar{\mathbf{a}}^*$ should represent a scientifically meaningful intervention on the mixture history. The default 25th-versus-75th percentile contrast is useful as a standardized summary of the joint mixture effect, but it may not be appropriate for all applications. When components have different toxicological interpretations, users may specify named vectors through \code{a\_vals} and \code{astar\_vals} to define component-specific and time-specific interventions. Contrasts should remain within the empirical support of the observed exposure distribution unless extrapolation is scientifically justified and clearly disclosed.
 
@@ -229,37 +262,28 @@ The contrast $\bar{\mathbf{a}}$ versus $\bar{\mathbf{a}}^*$ should represent a s
 % Simulation content mirrors causalGBKMR_EHP_app/sections/simulation.tex
 % Application content mirrors causalGBKMR_EHP_app/sections/results_application.tex
 % ============================================================================
-\section*{Results}
-\label{sec:results}
+\section*{Simulation studies}
+\label{sec:simulation}
 
-\subsection*{Simulation study}
-
-We evaluate whether \pkg{CausalBKMR} recovers the joint causal effect of a time-varying mixture under known data-generating mechanisms, across scenarios that vary the strength of time-varying confounding, the linearity of the exposure-response surface, and the presence of interactions.
-
-\subsubsection*{Setup}
-
-A population dataset of $1{,}000{,}000$ observations was generated, where $\mathbf{A}_t = (A_{t,1}, \ldots, A_{t,k})^\top$ denotes the $k$-th metal exposure observed at the $t$-th time point. Baseline covariates $C_0$ and time-varying confounders $L_t$ were generated alongside. In each simulation, smaller datasets were randomly sampled from the population. Time-varying confounders were drawn from a normal distribution and log-transformed metal exposures from a multivariate normal distribution. Scenarios 1--4 considered two time points; scenarios 5--6 considered three time points (i.e., $t = 0, 1, 2$):
+We use simulations to check that \pkg{CausalBKMR} recovers the average causal effect when we control the data-generating mechanism. The two studies below share the way exposures and confounders are generated but differ in the outcome model and in the scenario settings. In both, a population of $1{,}000{,}000$ records is generated once and smaller datasets are drawn from it for each replicate. Log-transformed metal exposures come from a multivariate normal distribution and time-varying confounders from a normal distribution, built up over time as
 \begin{align*}
-    \log A_0 &\sim N\!\left(h_{A_0}(C_0),\, \sigma^2_{A_0}\right), \\
+    \log A_0 &\sim N\!\left(h_{A_0}(C_0),\, \sigma^2_{A_0}\right), &
     L_1 &\sim N\!\left(h_{L_1}(A_0, C_0),\, \sigma^2_{L_1}\right), \\
-    \log A_1 &\sim N\!\left(h_{A_1}(A_0, L_1),\, \sigma^2_{A_1}\right), \\
+    \log A_1 &\sim N\!\left(h_{A_1}(A_0, L_1),\, \sigma^2_{A_1}\right), &
     L_2 &\sim N\!\left(h_{L_2}(A_1, L_1),\, \sigma^2_{L_2}\right), \\
-    \log A_2 &\sim N\!\left(h_{A_2}(A_1, L_2),\, \sigma^2_{A_2}\right).
+    \log A_2 &\sim N\!\left(h_{A_2}(A_1, L_2),\, \sigma^2_{A_2}\right). &&
 \end{align*}
-
-Two outcome types were considered, continuous and binary. The continuous outcome was generated by
-\begin{equation*}
-    y_i \sim N\!\left(h_Y(L_1, L_2, A_0, A_1, A_2),\, \sigma^2_Y\right),
-\end{equation*}
-and the binary outcome by
-\begin{equation*}
-    y_i \sim \text{Bin}\!\left(n,\, h_Y(L_1, L_2, A_0, A_1, A_2)\right).
-\end{equation*}
-Variances $\sigma^2_{A_t}$, $\sigma^2_{L_t}$, and $\sigma^2_Y$ were calibrated to be realistic based on the Strong Heart Study application. For the underlying exposure--confounder functions $h_{L_t}(\cdot)$ and exposure-response functions $h_{Y_t}(\cdot)$, we considered six scenarios for the continuous outcome and three additional scenarios for the binary outcome, varying linearity, strength of confounding, and presence of interactions. The specification of each scenario is summarised in Table~\ref{tab:sim_scenarios}.
+The variances and the underlying functions $h_{L_t}(\cdot)$ and $h_{Y}(\cdot)$ are set to resemble the Strong Heart Study application, and they vary across six scenarios that change the number of visits, the strength of confounding, and whether the exposure-response surface is linear, quadratic, or has interactions (Table~\ref{tab:sim_scenarios}). For each scenario we draw $500$ datasets of $500$ observations and fit the \pkg{CausalBKMR} sequence
+\begin{align}
+    L_{1i} &= h_L(\mathbf{A}_{0i}) + \mathbf{C}_i^\top \boldsymbol{\beta} + \epsilon_{L_{1i}}, \label{eq:sim_L1} \\
+    L_{2i} &= h_L(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{L}_{1i}) + \mathbf{C}_i^\top \boldsymbol{\beta} + \epsilon_{L_{2i}}, \label{eq:sim_L2} \\
+    Y_i &= h_Y(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{A}_{2i}, \mathbf{L}_{1i}, \mathbf{L}_{2i}) + \mathbf{C}_i^\top \boldsymbol{\theta} + \epsilon_{Y_i}. \label{eq:sim_Y}
+\end{align}
+The target is the change in $Y$ when the mixture moves from $\mathbf{a}$ (every exposure at its 25th percentile) to $\mathbf{a}^*$ (every exposure at its 75th percentile), and we compare the posterior mean against the true effect computed analytically from the population.
 
 \begin{table}[h]
 \centering
-\caption{Number of time points, the strength of the confounding effect, and exposure-confounder-response underlying relationships used for each simulation scenario.}
+\caption{Number of time points, strength of confounding, and the underlying exposure-confounder-response relationship for each simulation scenario.}
 \label{tab:sim_scenarios}
 \begin{tabular}{lccccc}
 \toprule
@@ -275,48 +299,110 @@ Scenario & Time points & Correlation & Confounding & Underlying relationship & O
 \end{tabular}
 \end{table}
 
-For each scenario, $500$ datasets of $500$ observations were sampled from the population dataset. We first fit the BKMR confounder and outcome models:
-\begin{align}
-    L_{1i} &= h_L(\mathbf{A}_{0i}) + \mathbf{C}_i^\top \boldsymbol{\beta} + \epsilon_{L_{1i}}, \label{eq:sim_L1} \\
-    L_{2i} &= h_L(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{L}_{1i}) + \mathbf{C}_i^\top \boldsymbol{\beta} + \epsilon_{L_{2i}}, \label{eq:sim_L2} \\
-    Y_i &= h_Y(\mathbf{A}_{0i}, \mathbf{A}_{1i}, \mathbf{A}_{2i}, \mathbf{L}_{1i}, \mathbf{L}_{2i}) + \mathbf{C}_i^\top \boldsymbol{\theta} + \epsilon_{Y_i}. \label{eq:sim_Y}
-\end{align}
-Using \pkg{CausalBKMR} with component-wise variable selection, we estimated the change in the potential outcome $Y$ for a shift of the exposure mixture from $\mathbf{a}$ (all exposures at the $25^{\text{th}}$ percentile of the underlying dataset) to $\mathbf{a}^*$ (all exposures at the $75^{\text{th}}$ percentile of the underlying dataset). For each scenario we compared the posterior mean estimate against the true average treatment effect computed analytically from the population data-generating mechanism.
+\subsection*{Simulation study for continuous outcomes}
 
-\subsubsection*{Simulation results}
-
-Table~\ref{tab:sim_results} summarises the empirical bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimates across the $500$ simulated datasets in each scenario, under the default component-wise variable selection (\code{varsel = TRUE}) and without it. \pkg{CausalBKMR} recovered the target contrast with low bias across all six scenarios, including the quadratic and interaction-driven exposure-response surfaces (scenarios 1, 3, 4, 5) where the functional form is not known in advance. Coverage was at or near the nominal level for the continuous-outcome scenarios ($0.91$--$0.98$ with variable selection) and for the three-visit binary scenarios ($0.93$--$0.94$); the two-visit binary scenario with low confounding and an interaction (scenario 4) showed some undercoverage ($0.77$ with variable selection), which we attribute to the combination of a binary outcome with a modest per-replicate sample size. The two configurations produced similar bias in most scenarios; turning off variable selection raised coverage toward or above the nominal level (for example, $0.99$ in scenarios 1--3) but at substantially higher computational cost, because effects are then estimated for all predictors rather than a selected subset. We therefore use \code{varsel = TRUE} as the default. Overall, these results indicate that the standard \pkg{bkmr} engine recovers the g-BKMR estimand with low bias under correctly specified longitudinal data-generating mechanisms.
+For the continuous studies (scenarios 1--3) the outcome is drawn from $y_i \sim N(h_Y(L_1, L_2, A_0, A_1, A_2),\, \sigma^2_Y)$. Table~\ref{tab:sim_continuous} reports the bias, mean squared error (MSE), and 95\% credible-interval coverage of the \pkg{CausalBKMR} estimate over the $500$ replicates, with and without component-wise variable selection. Bias is small throughout, including the quadratic and interaction surfaces in scenarios 1 and 3 where the response shape is not known ahead of time. With variable selection on, coverage runs from $0.91$ to $0.98$. Turning selection off pushes coverage up to about $0.99$ but costs considerably more computation, since the model then estimates an effect for every predictor instead of a selected subset; we keep variable selection on by default.
 
 \begin{table}[h]
 \centering
-\caption{Bias, mean squared error (MSE), and coverage of the 95\% credible intervals for the \pkg{CausalBKMR} average-treatment-effect estimate across the $500$ simulated datasets in each scenario, with and without component-wise variable selection. Scenario definitions are given in Table~\ref{tab:sim_scenarios}.}
-\label{tab:sim_results}
-\begin{tabular}{ccc rrr}
+\caption{Bias, MSE, and 95\% credible-interval coverage of the \pkg{CausalBKMR} estimate over $500$ replicates, continuous-outcome scenarios (1--3), with and without component-wise variable selection. Scenario definitions are in Table~\ref{tab:sim_scenarios}.}
+\label{tab:sim_continuous}
+\begin{tabular}{cc rrr}
 \toprule
-Scenario & Outcome & Variable selection & Bias & MSE & Coverage \\
+Scenario & Variable selection & Bias & MSE & Coverage \\
 \midrule
-1 & continuous & yes & $0.00$  & 0.01 & 0.98 \\
-1 & continuous & no  & $-0.00$ & 0.02 & 0.99 \\
+1 & yes & $0.00$  & 0.01 & 0.98 \\
+1 & no  & $-0.00$ & 0.02 & 0.99 \\
 \midrule
-2 & continuous & yes & $0.01$  & 0.03 & 0.96 \\
-2 & continuous & no  & $-0.02$ & 0.04 & 0.99 \\
+2 & yes & $0.01$  & 0.03 & 0.96 \\
+2 & no  & $-0.02$ & 0.04 & 0.99 \\
 \midrule
-3 & continuous & yes & $-0.13$ & 0.05 & 0.91 \\
-3 & continuous & no  & $-0.11$ & 0.07 & 0.99 \\
-\midrule
-4 & binary     & yes & $0.03$  & 0.00 & 0.77 \\
-4 & binary     & no  & $0.01$  & 0.00 & 0.99 \\
-\midrule
-5 & binary     & yes & $-0.02$ & 0.00 & 0.93 \\
-5 & binary     & no  & $0.01$  & 0.00 & 0.97 \\
-\midrule
-6 & binary     & yes & $-0.02$ & 0.00 & 0.94 \\
-6 & binary     & no  & $0.00$  & 0.00 & 0.98 \\
+3 & yes & $-0.13$ & 0.05 & 0.91 \\
+3 & no  & $-0.11$ & 0.07 & 0.99 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection*{Application: command walkthrough on the Strong Heart Study}
+\subsection*{Simulation study for binary outcomes}
+
+The binary studies (scenarios 4--6) keep the same exposure and confounder generation but draw the outcome from $y_i \sim \text{Bin}(n,\, h_Y(L_1, L_2, A_0, A_1, A_2))$, with the effect reported on the probability scale. Table~\ref{tab:sim_binary} gives the same three summaries. Bias stays small. Coverage is near nominal for the three-visit scenarios 5 and 6 ($0.93$--$0.94$), but the two-visit scenario 4 -- low confounding with an interaction -- is undercovered at $0.77$ with variable selection on; this seems to come from pairing a binary outcome with only $500$ observations per replicate, and turning selection off restores coverage to $0.99$.
+
+\begin{table}[h]
+\centering
+\caption{Bias, MSE, and 95\% credible-interval coverage of the \pkg{CausalBKMR} estimate over $500$ replicates, binary-outcome scenarios (4--6), with and without component-wise variable selection. Scenario definitions are in Table~\ref{tab:sim_scenarios}.}
+\label{tab:sim_binary}
+\begin{tabular}{cc rrr}
+\toprule
+Scenario & Variable selection & Bias & MSE & Coverage \\
+\midrule
+4 & yes & $0.03$  & 0.00 & 0.77 \\
+4 & no  & $0.01$  & 0.00 & 0.99 \\
+\midrule
+5 & yes & $-0.02$ & 0.00 & 0.93 \\
+5 & no  & $0.01$  & 0.00 & 0.97 \\
+\midrule
+6 & yes & $-0.02$ & 0.00 & 0.94 \\
+6 & no  & $0.00$  & 0.00 & 0.98 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Simulation study with fastBKMR}
+
+Standard BKMR scales poorly with cohort size because the Gaussian kernel requires $O(n^3)$ operations per MCMC iteration, which limits applicability of the standard \pkg{bkmr} engine in modern cohorts. The optional \code{engine = "fastbkmr"} path in \pkg{CausalBKMR} addresses this by calling \pkg{fbkmr} \citep{sonabend_fastbkmr_2026}, which fits the Bayesian kernel machine regression on multiple data subsets in parallel and recombines posterior draws through median-posterior subset aggregation. To document the practical computational gains and validate the subset approximation, we benchmarked the fastBKMR engine against the standard \pkg{bkmr} engine on a longitudinal data-generating mechanism matching the Strong Heart Study application in structure ($T=3$ visits, $p=4$ exposures per visit, one time-varying confounder, continuous outcome, $\alpha_1 = 0.6$) but scaled to MESA-cohort sample sizes ($n = 6{,}000$). This continuous-outcome, continuous-confounder DGP is the supported configuration of \code{engine = "fastbkmr"} per Table~\ref{tab:engine_support}; we additionally verified that the wall-clock characteristics are insensitive to outcome family by re-running the same fitting code under a binary-outcome DGP (Scenario 3c), with negligible difference because \code{kmbayes()} and \code{skmbayes()} both fit Gaussian kernel regressions on $y$ regardless of how $y$ was generated.
+
+The data-generating mechanism follows the longitudinal structure described in equations~(\ref{eq:sim_L1})--(\ref{eq:sim_Y}) with $T=3$, $p=4$, one continuous time-varying confounder ($\text{waist}_t$), and confounding strength $\alpha_1 = 0.6$. The continuous outcome is generated by $Y_i = h_Y(L_{1i}, L_{2i}, A_{0i}, A_{1i}, A_{2i}) + \mathbf{C}_i^\top \boldsymbol{\theta} + \varepsilon_{Y_i}$ with $\varepsilon_{Y_i} \sim N(0, 0.5^2)$ and baseline covariates $\mathbf{C}_i = (\text{sex}_i, \text{waist}_{0,i})$. Three independent simulation replicates are drawn from the same population specification using seeds $1$, $2$, $3$.
+
+We compare four engine configurations on this DGP, summarised in Table~\ref{tab:fastbkmr_config}: (i) standard BKMR on a random $n = 500$ subsample with 50 knots; (ii) standard BKMR on a random $n = 2{,}000$ subsample with 50 knots; (iii) standard BKMR on the full $n = 6{,}000$ sample with 50 knots, run single-core, providing a full-cohort \pkg{bkmr} baseline; and (iv) fastBKMR on the full $n = 6{,}000$ sample using 10 random subsets of size $\sim 600$, fit in parallel on 10 cores via \code{skmbayes(parallel = TRUE)}. To make the comparison fair, every configuration uses $15{,}000$ MCMC iterations and \code{varsel = TRUE}; the fastBKMR runs additionally set \code{est.h = FALSE} so that the spatial smoothing variance is estimated post hoc rather than at each iteration. Two baseline covariates (sex and waist circumference at baseline) enter each model linearly. Knot approximation is not currently supported in \code{skmbayes()}, so the fastBKMR subsets fit the exact Gaussian kernel. Each model is fit on the same three simulated datasets, so the only varying experimental factors are the engine, the sample-size policy, and (for the fastBKMR engine) the parallelisation strategy.
+
+\begin{table}[h]
+\centering
+\setlength{\tabcolsep}{6pt}
+\caption{Engine configurations compared in the wall-clock benchmark. The four rows share the same simulated DGP described above; only the engine and the sample-size policy differ. The fastBKMR engine fits the exact Gaussian kernel on each subset because \code{skmbayes()} does not currently support the predictive-process knot approximation.}
+\label{tab:fastbkmr_config}
+\begin{tabular}{lrlrrc}
+\toprule
+Method & $n$ used & Knots & Iter & Cores & \code{varsel} \\
+\midrule
+BKMR ($n = 500$)     &   500 & 50   & $15{,}000$ &  1 & TRUE \\
+BKMR ($n = 2{,}000$) & 2{,}000 & 50   & $15{,}000$ &  1 & TRUE \\
+BKMR ($n = 6{,}000$) & 6{,}000 & 50   & $15{,}000$ &  1 & TRUE \\
+fastBKMR ($n = 6{,}000$, 10 subsets) & 6{,}000 & none & $15{,}000$ & 10 & TRUE \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:fastbkmr_time} reports per-model wall-clock time across the four methods, averaged over the three replicates. With 10-core parallelisation, the fastBKMR engine fits each full-cohort model in approximately $50$ minutes, compared with $7$ minutes for the single-core BKMR fit on $n = 500$, $80$ minutes for the single-core BKMR fit on $n = 2{,}000$, and roughly $12$ hours for the single-core BKMR fit on the full $n = 6{,}000$ sample. Standard BKMR scales markedly super-linearly in $n$ at fixed knots: going from $n = 500$ to $n = 2{,}000$ (a $4\times$ data increase) costs about $12\times$ the time per fit, and going to $n = 6{,}000$ ($12\times$ the data) costs about $110\times$. The observed scaling across the three sample sizes is approximately $n^{1.9}$ (fitted exponents of $1.79$ for $500 \to 2{,}000$, $1.99$ for $2{,}000 \to 6{,}000$, and $1.89$ for $500 \to 6{,}000$), consistent with an $n^2$ bottleneck inside \code{kmbayes()} rather than the $n^1$ behaviour predicted by the predictive-process approximation at fixed knots. Within each engine, per-model timings are nearly insensitive to the number of kernel inputs across the $L_1$, $L_2$, and outcome models (BKMR with 50 knots: $6.7$ to $7.2$ minutes at $n = 500$, $79.0$ to $81.4$ at $n = 2{,}000$, $726.8$ to $738.0$ at $n = 6{,}000$; fastBKMR with no knots: $49.5$ to $49.8$ minutes), so kernel dimension is not the binding constraint in this regime.
+
+Translating per-model timings to a complete g-formula run that fits the two confounder models and the outcome model yields approximately $21$ minutes for the standard BKMR pipeline on $n = 500$, $4.0$ hours on $n = 2{,}000$, $36.6$ hours on the full $n = 6{,}000$, and $2.5$ hours for the fastBKMR pipeline on the full $n = 6{,}000$. Two comparisons are worth flagging. First, at identical full-cohort sample size, fastBKMR is $14.7\times$ faster than single-core standard BKMR ($2.5$ hours vs $36.6$ hours); this is the clean ``same data, more cores'' comparison without any subsampling concession. Second, against the most defensible subsampling baseline (single-core BKMR on $n = 2{,}000$, $4.0$ hours), fastBKMR is still $1.6\times$ faster while using $3\times$ as much data, so the parallel full-cohort path dominates the subsampling path on both dimensions when ten cores are available.
+
+A controlled rerun under a binary-outcome DGP (matching the original 3c configuration, with all other knobs held fixed) produced per-cell wall-time means within $\pm 5\%$ of the continuous-outcome values for both BKMR with $n = 2{,}000$ and fastBKMR, confirming that the wall-time characteristics reported here are insensitive to outcome family at this engine level.
+
+\begin{table}[h]
+\centering
+\caption{Wall-clock time per model fit (minutes, mean $\pm$ SD across three replicates) for each engine configuration in Table~\ref{tab:fastbkmr_config}. The $L_1$ model uses 4 kernel inputs (the baseline mixture $A_0$), the $L_2$ model uses 9 inputs ($A_0, A_1, L_1$), and the outcome model uses 14 inputs ($A_0, A_1, A_2, L_1, L_2$). Numbers are from Scenario 3d (continuous outcome, $n = 6{,}000$); a controlled rerun under a binary-outcome DGP (Scenario 3c) differed by at most $\pm 5\%$ per cell for the three engines for which 3c data exist.}
+\label{tab:fastbkmr_time}
+\begin{tabular}{lr rrr}
+\toprule
+Method & $n$ & $L_1$ model (4Z) & $L_2$ model (9Z) & Outcome model (14Z) \\
+\midrule
+BKMR (standard)    &     500 & $6.7 \pm 0.5$    & $7.0 \pm 0.4$     & $7.2 \pm 0.4$   \\
+BKMR (standard)    & 2{,}000 & $81.4 \pm 0.9$   & $79.0 \pm 2.0$    & $80.4 \pm 1.8$  \\
+BKMR (standard)    & 6{,}000 & $726.8 \pm 7.3$  & $731.1 \pm 10.9$  & $738.0 \pm 7.0$ \\
+fastBKMR           & 6{,}000 & $49.5 \pm 1.9$   & $50.0 \pm 1.9$    & $49.8 \pm 2.1$  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Posterior estimates of the baseline-covariate coefficients were consistent across the three methods, indicating that the subset approximation does not introduce systematic bias in the estimated parametric components: for the outcome model, the posterior mean of the (sex, baseline waist) coefficients was $(0.199, 0.137)$ under BKMR with $n = 500$, $(0.218, 0.108)$ under BKMR with $n = 2{,}000$, and $(0.204, 0.111)$ under fastBKMR with $n = 6{,}000$. The between-replication standard deviation of these estimates was consistently lower for fastBKMR than for BKMR with $n = 500$: 2- to 10-fold across the six (model, coefficient) combinations, with the outcome model giving $(0.016, 0.010)$ for fastBKMR versus $(0.040, 0.019)$ for BKMR with $n = 500$. The precision gain reflects the fact that fastBKMR aggregates information across the full $n = 6{,}000$ sample rather than depending on a single subsample.
+
+A practical caveat concerns g-computation. Counterfactual prediction in \pkg{CausalBKMR} relies on \code{bkmr::SamplePred()}, which accepts the standard \code{bkmrfit} object and each individual subset of a fastBKMR fit, but not the full \code{skmbayes} list object directly. The \code{gbkmr\_run()} command therefore detects the engine choice and, when \code{engine = "fastbkmr"}, calls \code{SamplePred()} on randomly sampled subset fits across MCMC iterations. This integration is internal and requires no engine toggle from the user.
+
+% ============================================================================
+% DISCUSSION
+% ============================================================================
+\section*{Application: command walkthrough on the Strong Heart Study}
+\label{sec:application}
 
 We illustrate the three-step \pkg{CausalBKMR} workflow on a metal-mixture analysis of fasting blood glucose in the Strong Heart Study \citep[SHS;][]{shs_lee_1990}. The intent of this section is to demonstrate what each command does on a realistic problem; full scientific findings, single-metal contributions, and sensitivity analyses are reported in the accompanying SHS application paper (in preparation).
 
@@ -415,116 +501,22 @@ For this analysis, the 75th-versus-25th percentile joint contrast was $1.01$ sta
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}[
-    node distance=1.6cm and 1.8cm,
-    every node/.style={font=\large},
-    arr/.style={-{Stealth[length=6pt]}, thick}
-]
-\node (A0) {$A_0$};
-\node (A1) [right=of A0] {$A_1$};
-\node (A2) [right=of A1] {$A_2$};
-\node (Y)  [right=of A2] {$Y$};
-\node (C0) [below=of A0] {$C_0$};
-\node (L1) [below=of A1] {$L_1$};
-\node (L2) [below=of A2] {$L_2$};
-\draw[arr] (A0) -- (A1);
-\draw[arr] (A1) -- (A2);
-\draw[arr] (A2) -- (Y);
-\draw[arr] (C0) -- (L1);
-\draw[arr] (L1) -- (L2);
-\draw[arr] (C0) -- (A0);
-\draw[arr] (L1) -- (A1);
-\draw[arr] (L2) -- (A2);
-\draw[arr] (A0) -- (L1);
-\draw[arr] (A1) -- (L2);
-\draw[arr, bend left=35]  (A0) to (Y);
-\draw[arr, bend left=20]  (A1) to (Y);
-\draw[arr, bend right=60] (C0) to (Y);
-\draw[arr, bend right=50] (L1) to (Y);
-\draw[arr, bend right=30] (L2) to (Y);
-\end{tikzpicture}
-\caption{Directed acyclic graph showing time-varying exposures ($A_t$), time-varying confounders ($L_t$), baseline covariates ($C_0$), and outcome ($Y$) at 3 visits.}
-\label{fig:dag}
-\end{figure}
-
-\begin{figure}[h]
-\centering
 \includegraphics[width=0.85\textwidth]{figures/fig_dr_full.png}
 \caption{Joint causal dose-response of the metal mixture on log fasting glucose, full sample ($n = 679$). Reference: 25th percentile. Shaded band: 95\% credible interval.}
 \label{fig:dr-joint}
 \end{figure}
 
 
-\subsection*{fastBKMR computational benchmark}
-
-Standard BKMR scales poorly with cohort size because the Gaussian kernel requires $O(n^3)$ operations per MCMC iteration, which limits applicability of the standard \pkg{bkmr} engine in modern cohorts. The optional \code{engine = "fastbkmr"} path in \pkg{CausalBKMR} addresses this by calling \pkg{fbkmr} \citep{sonabend_fastbkmr_2026}, which fits the Bayesian kernel machine regression on multiple data subsets in parallel and recombines posterior draws through median-posterior subset aggregation. To document the practical computational gains and validate the subset approximation, we benchmarked the fastBKMR engine against the standard \pkg{bkmr} engine on a longitudinal data-generating mechanism matching the Strong Heart Study application in structure ($T=3$ visits, $p=4$ exposures per visit, one time-varying confounder, continuous outcome, $\alpha_1 = 0.6$) but scaled to MESA-cohort sample sizes ($n = 6{,}000$). This continuous-outcome, continuous-confounder DGP is the supported configuration of \code{engine = "fastbkmr"} per Table~\ref{tab:engine_support}; we additionally verified that the wall-clock characteristics are insensitive to outcome family by re-running the same fitting code under a binary-outcome DGP (Scenario 3c), with negligible difference because \code{kmbayes()} and \code{skmbayes()} both fit Gaussian kernel regressions on $y$ regardless of how $y$ was generated.
-
-The data-generating mechanism follows the longitudinal structure described in equations~(\ref{eq:sim_L1})--(\ref{eq:sim_Y}) with $T=3$, $p=4$, one continuous time-varying confounder ($\text{waist}_t$), and confounding strength $\alpha_1 = 0.6$. The continuous outcome is generated by $Y_i = h_Y(L_{1i}, L_{2i}, A_{0i}, A_{1i}, A_{2i}) + \mathbf{C}_i^\top \boldsymbol{\theta} + \varepsilon_{Y_i}$ with $\varepsilon_{Y_i} \sim N(0, 0.5^2)$ and baseline covariates $\mathbf{C}_i = (\text{sex}_i, \text{waist}_{0,i})$. Three independent simulation replicates are drawn from the same population specification using seeds $1$, $2$, $3$.
-
-We compare four engine configurations on this DGP, summarised in Table~\ref{tab:fastbkmr_config}: (i) standard BKMR on a random $n = 500$ subsample with 50 knots; (ii) standard BKMR on a random $n = 2{,}000$ subsample with 50 knots; (iii) standard BKMR on the full $n = 6{,}000$ sample with 50 knots, run single-core, providing a full-cohort \pkg{bkmr} baseline; and (iv) fastBKMR on the full $n = 6{,}000$ sample using 10 random subsets of size $\sim 600$, fit in parallel on 10 cores via \code{skmbayes(parallel = TRUE)}. To make the comparison fair, every configuration uses $15{,}000$ MCMC iterations and \code{varsel = TRUE}; the fastBKMR runs additionally set \code{est.h = FALSE} so that the spatial smoothing variance is estimated post hoc rather than at each iteration. Two baseline covariates (sex and waist circumference at baseline) enter each model linearly. Knot approximation is not currently supported in \code{skmbayes()}, so the fastBKMR subsets fit the exact Gaussian kernel. Each model is fit on the same three simulated datasets, so the only varying experimental factors are the engine, the sample-size policy, and (for the fastBKMR engine) the parallelisation strategy.
-
-\begin{table}[h]
-\centering
-\setlength{\tabcolsep}{6pt}
-\caption{Engine configurations compared in the wall-clock benchmark. The four rows share the same simulated DGP described above; only the engine and the sample-size policy differ. The fastBKMR engine fits the exact Gaussian kernel on each subset because \code{skmbayes()} does not currently support the predictive-process knot approximation.}
-\label{tab:fastbkmr_config}
-\begin{tabular}{lrlrrc}
-\toprule
-Method & $n$ used & Knots & Iter & Cores & \code{varsel} \\
-\midrule
-BKMR ($n = 500$)     &   500 & 50   & $15{,}000$ &  1 & TRUE \\
-BKMR ($n = 2{,}000$) & 2{,}000 & 50   & $15{,}000$ &  1 & TRUE \\
-BKMR ($n = 6{,}000$) & 6{,}000 & 50   & $15{,}000$ &  1 & TRUE \\
-fastBKMR ($n = 6{,}000$, 10 subsets) & 6{,}000 & none & $15{,}000$ & 10 & TRUE \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Table~\ref{tab:fastbkmr_time} reports per-model wall-clock time across the four methods, averaged over the three replicates. With 10-core parallelisation, the fastBKMR engine fits each full-cohort model in approximately $50$ minutes, compared with $7$ minutes for the single-core BKMR fit on $n = 500$, $80$ minutes for the single-core BKMR fit on $n = 2{,}000$, and roughly $12$ hours for the single-core BKMR fit on the full $n = 6{,}000$ sample. Standard BKMR scales markedly super-linearly in $n$ at fixed knots: going from $n = 500$ to $n = 2{,}000$ (a $4\times$ data increase) costs about $12\times$ the time per fit, and going to $n = 6{,}000$ ($12\times$ the data) costs about $110\times$. The observed scaling across the three sample sizes is approximately $n^{1.9}$ (fitted exponents of $1.79$ for $500 \to 2{,}000$, $1.99$ for $2{,}000 \to 6{,}000$, and $1.89$ for $500 \to 6{,}000$), consistent with an $n^2$ bottleneck inside \code{kmbayes()} rather than the $n^1$ behaviour predicted by the predictive-process approximation at fixed knots. Within each engine, per-model timings are nearly insensitive to the number of kernel inputs across the $L_1$, $L_2$, and outcome models (BKMR with 50 knots: $6.7$ to $7.2$ minutes at $n = 500$, $79.0$ to $81.4$ at $n = 2{,}000$, $726.8$ to $738.0$ at $n = 6{,}000$; fastBKMR with no knots: $49.5$ to $49.8$ minutes), so kernel dimension is not the binding constraint in this regime.
-
-Translating per-model timings to a complete g-formula run that fits the two confounder models and the outcome model yields approximately $21$ minutes for the standard BKMR pipeline on $n = 500$, $4.0$ hours on $n = 2{,}000$, $36.6$ hours on the full $n = 6{,}000$, and $2.5$ hours for the fastBKMR pipeline on the full $n = 6{,}000$. Two comparisons are worth flagging. First, at identical full-cohort sample size, fastBKMR is $14.7\times$ faster than single-core standard BKMR ($2.5$ hours vs $36.6$ hours); this is the clean ``same data, more cores'' comparison without any subsampling concession. Second, against the most defensible subsampling baseline (single-core BKMR on $n = 2{,}000$, $4.0$ hours), fastBKMR is still $1.6\times$ faster while using $3\times$ as much data, so the parallel full-cohort path dominates the subsampling path on both dimensions when ten cores are available.
-
-A controlled rerun under a binary-outcome DGP (matching the original 3c configuration, with all other knobs held fixed) produced per-cell wall-time means within $\pm 5\%$ of the continuous-outcome values for both BKMR with $n = 2{,}000$ and fastBKMR, confirming that the wall-time characteristics reported here are insensitive to outcome family at this engine level.
-
-\begin{table}[h]
-\centering
-\caption{Wall-clock time per model fit (minutes, mean $\pm$ SD across three replicates) for each engine configuration in Table~\ref{tab:fastbkmr_config}. The $L_1$ model uses 4 kernel inputs (the baseline mixture $A_0$), the $L_2$ model uses 9 inputs ($A_0, A_1, L_1$), and the outcome model uses 14 inputs ($A_0, A_1, A_2, L_1, L_2$). Numbers are from Scenario 3d (continuous outcome, $n = 6{,}000$); a controlled rerun under a binary-outcome DGP (Scenario 3c) differed by at most $\pm 5\%$ per cell for the three engines for which 3c data exist.}
-\label{tab:fastbkmr_time}
-\begin{tabular}{lr rrr}
-\toprule
-Method & $n$ & $L_1$ model (4Z) & $L_2$ model (9Z) & Outcome model (14Z) \\
-\midrule
-BKMR (standard)    &     500 & $6.7 \pm 0.5$    & $7.0 \pm 0.4$     & $7.2 \pm 0.4$   \\
-BKMR (standard)    & 2{,}000 & $81.4 \pm 0.9$   & $79.0 \pm 2.0$    & $80.4 \pm 1.8$  \\
-BKMR (standard)    & 6{,}000 & $726.8 \pm 7.3$  & $731.1 \pm 10.9$  & $738.0 \pm 7.0$ \\
-fastBKMR           & 6{,}000 & $49.5 \pm 1.9$   & $50.0 \pm 1.9$    & $49.8 \pm 2.1$  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Posterior estimates of the baseline-covariate coefficients were consistent across the three methods, indicating that the subset approximation does not introduce systematic bias in the estimated parametric components: for the outcome model, the posterior mean of the (sex, baseline waist) coefficients was $(0.199, 0.137)$ under BKMR with $n = 500$, $(0.218, 0.108)$ under BKMR with $n = 2{,}000$, and $(0.204, 0.111)$ under fastBKMR with $n = 6{,}000$. The between-replication standard deviation of these estimates was consistently lower for fastBKMR than for BKMR with $n = 500$: 2- to 10-fold across the six (model, coefficient) combinations, with the outcome model giving $(0.016, 0.010)$ for fastBKMR versus $(0.040, 0.019)$ for BKMR with $n = 500$. The precision gain reflects the fact that fastBKMR aggregates information across the full $n = 6{,}000$ sample rather than depending on a single subsample.
-
-A practical caveat concerns g-computation. Counterfactual prediction in \pkg{CausalBKMR} relies on \code{bkmr::SamplePred()}, which accepts the standard \code{bkmrfit} object and each individual subset of a fastBKMR fit, but not the full \code{skmbayes} list object directly. The \code{gbkmr\_run()} command therefore detects the engine choice and, when \code{engine = "fastbkmr"}, calls \code{SamplePred()} on randomly sampled subset fits across MCMC iterations. This integration is internal and requires no engine toggle from the user.
-
-% ============================================================================
-% DISCUSSION
-% ============================================================================
-\section*{Discussion}
+\section*{Discussion and Conclusions}
 \label{sec:discussion}
 
 \pkg{CausalBKMR} extends \pkg{causalmixtures} to a setting its existing modules do not cover. Until now the package handled BKMR-based mediation (BKMR-CMA) and multiple imputation (BKMR-MI); the new module adds time-varying mixtures, so the three modules together span mediation, missing data, and longitudinal confounding. Applied researchers already have mature software for single-time-point mixture analysis and for parametric longitudinal g-formula analysis, but g-BKMR sat between the two and previously meant writing custom code for data reshaping, sequential BKMR fitting, counterfactual covariate simulation, posterior summarization, and diagnostics. Packaging those steps into a few commands makes the method usable without that scaffolding.
 
 We recommend that users begin with the default \code{engine = "auto"} workflow and a prespecified 25th-versus-75th percentile mixture contrast for the primary analysis. Before interpreting estimates, users should inspect the input audit, confirm that the detected exposure and confounder ordering matches the study design, verify that the chosen contrast is within empirical support, and review convergence diagnostics. For binary outcomes, users should explicitly set \code{outcome\_type = "binary"}; the default \code{engine = "auto"} setting will then route the analysis to the standard \pkg{bkmr} engine, as it will whenever any binary time-varying confounder is detected (Table~\ref{tab:engine_support}). For analyses with continuous $Y$ and continuous $L_t$ at MESA-scale sample sizes, \code{engine = "auto"} will select fastBKMR when \pkg{fbkmr} is available, but users should still assess whether the scalable approximation gives stable summaries under alternative subset settings.
 
-The current implementation has limitations. Continuous time-varying confounders use Gaussian BKMR confounder models, while binary time-varying confounders use probit BKMR confounder models with Bernoulli sampling in Monte Carlo g-computation; mixtures of count, censored, or otherwise non-Gaussian and non-binary $L_t$ are not yet supported and would need a separate likelihood. Baseline covariates enter as linear terms rather than as kernel modifiers. The fastBKMR engine is currently restricted to fully continuous problems, because the installed \pkg{fbkmr} implementation supports Gaussian kernels only; analyses with binary $Y$ or binary $L_t$ therefore run on the standard \pkg{bkmr} engine even when the default \code{engine = "auto"} would otherwise have selected fastBKMR. Future work will extend support to count and censored time-varying confounders, scalable binary-outcome analyses through a non-Gaussian fastBKMR variant, richer posterior visualisation, and harmonised documentation with the other \pkg{causalmixtures} modules.
+The current implementation has limitations. Continuous time-varying confounders use Gaussian BKMR confounder models, while binary time-varying confounders use probit BKMR confounder models with Bernoulli sampling in Monte Carlo g-computation; count, censored, or otherwise non-Gaussian and non-binary $L_t$ are not yet supported and would need a separate likelihood. Baseline covariates enter as linear terms rather than as kernel modifiers. The fastBKMR engine is currently restricted to fully continuous problems, because the installed \pkg{fbkmr} implementation supports Gaussian kernels only; analyses with binary $Y$ or binary $L_t$ therefore run on the standard \pkg{bkmr} engine even when the default \code{engine = "auto"} would otherwise have selected fastBKMR. Future work will extend support to count and censored time-varying confounders, scalable binary-outcome analyses through a non-Gaussian fastBKMR variant, richer posterior visualisation, and harmonised documentation with the other \pkg{causalmixtures} modules.
 
-% ============================================================================
-% CONCLUSIONS
-% ============================================================================
-\section*{Conclusions}
-\label{sec:conclusions}
-
-\pkg{CausalBKMR} turns g-BKMR into a small, documented set of R commands for estimating the causal effects of time-varying environmental mixtures. As the time-varying-mixture module of \pkg{causalmixtures}, it ties together data preparation, sequential BKMR fitting, Monte Carlo g-computation, posterior summaries, and diagnostics, with an optional fastBKMR engine for large continuous-outcome problems. The simulation study shows that the standard engine recovers the target estimand with low bias across linear, quadratic, and interaction-driven scenarios; the Strong Heart Study walkthrough shows how the three commands fit together on a real analysis; and the wall-time benchmark shows that the fastBKMR engine keeps full-cohort g-BKMR tractable at MESA scale.
+Taken together, \pkg{CausalBKMR} turns g-BKMR into a small, documented set of R commands: data preparation, sequential BKMR fitting, Monte Carlo g-computation, posterior summaries, and diagnostics, with an optional fastBKMR engine for large continuous-outcome problems. The simulation studies show that the standard engine recovers the target estimand with low bias across linear, quadratic, and interaction-driven scenarios; the Strong Heart Study walkthrough shows how the three commands fit together on a real analysis; and the wall-time benchmark shows that the fastBKMR engine keeps full-cohort g-BKMR tractable at MESA scale.
 
 % ============================================================================
 % DECLARATIONS
